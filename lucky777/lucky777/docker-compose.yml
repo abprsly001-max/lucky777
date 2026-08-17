@@ -1,0 +1,20 @@
+# Configured by setup-server.sh (which writes the .env file this reads).
+# Manual use:  cp .env.example .env, fill it in, then  docker compose up -d
+services:
+  lucky777:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      LUCKY777_JWT_SECRET: ${LUCKY777_JWT_SECRET:?no .env yet - run ./setup-server.sh}
+      LUCKY777_ADMIN_USERNAME: ${LUCKY777_ADMIN_USERNAME:-}
+      LUCKY777_ADMIN_PASSWORD: ${LUCKY777_ADMIN_PASSWORD:-}
+      # real odds (optional): free key from the-odds-api.com
+      LUCKY777_ODDS_PROVIDER: ${LUCKY777_ODDS_PROVIDER:-fixture}
+      LUCKY777_ODDS_API_KEY: ${LUCKY777_ODDS_API_KEY:-}
+    volumes:
+      - lucky777-data:/srv/data   # the ledger survives redeploys
+
+volumes:
+  lucky777-data:
