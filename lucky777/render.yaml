@@ -12,7 +12,7 @@ services:
     envVars:
       - key: LUCKY777_JWT_SECRET
         generateValue: true
-- key: LUCKY777_ADMIN_USERNAME
+      - key: LUCKY777_ADMIN_USERNAME
         value: Brock22
       - key: LUCKY777_ADMIN_PASSWORD
         sync: false
