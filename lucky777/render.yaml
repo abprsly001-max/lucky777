@@ -1,26 +1,2 @@
-services:
-  - type: web
-    name: lucky777
-    runtime: docker
-    dockerfilePath: ./lucky777/Dockerfile
+dockerfilePath: ./lucky777/Dockerfile
     dockerContext: ./lucky777
-    plan: starter
-    disk:
-      name: lucky777-data
-      mountPath: /srv/data
-      sizeGB: 1
-    envVars:
-      - key: LUCKY777_JWT_SECRET
-        generateValue: true
-      - key: LUCKY777_ADMIN_USERNAME
-        value: Brock22
-      - key: LUCKY777_ADMIN_PASSWORD
-        sync: false
-      - key: LUCKY777_ODDS_PROVIDER
-        value: the_odds_api
-      - key: LUCKY777_ODDS_API_KEY
-        value: cdf45a267ea57478898e834d5344a5d3
-      - key: LUCKY777_LIVE_SCORES_POLL_SECONDS
-        value: "60"
-      - key: LUCKY777_BOARD_SYNC_MINUTES
-        value: "30"
