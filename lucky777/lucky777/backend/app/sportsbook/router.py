@@ -51,36 +51,53 @@ async def events(sport: str | None = None, competition: str | None = None,
         q = q.where(Competition.key == competition)
     rows = (await session.execute(q)).all()
 
+    import logging
+    log = logging.getLogger("lucky777.board")
     out = []
     for ev, comp, sp in rows:
-        markets = (await session.execute(
-            select(Market).where(Market.event_id == ev.id, Market.status == "open")
-        )).scalars().all()
-        m_out = []
-        for m in markets:
-            sels = (await session.execute(
-                select(Selection).where(Selection.market_id == m.id).order_by(Selection.id)
+        # one malformed event must never blank the whole board: serialize each
+        # game defensively, skip and log the ones that fail
+        try:
+            markets = (await session.execute(
+                select(Market).where(Market.event_id == ev.id, Market.status == "open")
             )).scalars().all()
-            prices = [s.odds_decimal for s in sels]
-            m_out.append({
-                "id": m.id, "type": m.type, "name": m.name, "line": m.line,
-                "overround": str(round(overround(prices), 4)) if prices else None,
-                "hold_pct": str(round(hold(prices) * 100, 2)) if prices else None,
-                "selections": [{
-                    "id": s.id, "key": s.key, "name": s.name,
-                    "odds": s.odds_decimal, "american": format_american(s.odds_decimal),
-                    "implied_pct": str(round(implied_probability(s.odds_decimal) * 100, 1)),
-                } for s in sels],
+            m_out = []
+            for m in markets:
+                try:
+                    sels = (await session.execute(
+                        select(Selection).where(Selection.market_id == m.id)
+                        .order_by(Selection.id)
+                    )).scalars().all()
+                    prices = [s.odds_decimal for s in sels]
+                    m_out.append({
+                        "id": m.id, "type": m.type, "name": m.name, "line": m.line,
+                        "overround": str(round(overround(prices), 4)) if prices else None,
+                        "hold_pct": str(round(hold(prices) * 100, 2)) if prices else None,
+                        "selections": [{
+                            "id": s.id, "key": s.key, "name": s.name,
+                            "odds": s.odds_decimal, "american": format_american(s.odds_decimal),
+                            "implied_pct": str(round(implied_probability(s.odds_decimal) * 100, 1)),
+                        } for s in sels],
+                    })
+                except Exception:                            # noqa: BLE001
+                    log.exception("skipping market %s (%s) on event %s",
+                                  m.id, m.type, ev.id)
+            try:
+                pscores = json.loads(ev.period_scores) if ev.period_scores else []
+            except ValueError:
+                pscores = []
+            out.append({
+                "id": ev.id, "sport": sp.key, "sport_name": sp.name, "icon": sp.icon,
+                "competition": comp.name, "competition_key": comp.key,
+                "home": ev.home, "away": ev.away,
+                "starts_at": ev.starts_at.isoformat(), "markets": m_out,
+                "status": ev.status, "period": ev.period,
+                "home_score": ev.home_score, "away_score": ev.away_score,
+                "period_scores": pscores,
             })
-        out.append({
-            "id": ev.id, "sport": sp.key, "sport_name": sp.name, "icon": sp.icon,
-            "competition": comp.name, "competition_key": comp.key,
-            "home": ev.home, "away": ev.away,
-            "starts_at": ev.starts_at.isoformat(), "markets": m_out,
-            "status": ev.status, "period": ev.period,
-            "home_score": ev.home_score, "away_score": ev.away_score,
-            "period_scores": json.loads(ev.period_scores) if ev.period_scores else [],
-        })
+        except Exception:                                    # noqa: BLE001
+            log.exception("skipping unserializable event %s (%s v %s)",
+                          ev.id, ev.home, ev.away)
     await session.commit()
     return out
 
