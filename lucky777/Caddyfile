@@ -1,0 +1,4 @@
+# Replace with your domain. That's it — Caddy handles the HTTPS certificate.
+yourdomain.com {
+    reverse_proxy lucky777:8000
+}
