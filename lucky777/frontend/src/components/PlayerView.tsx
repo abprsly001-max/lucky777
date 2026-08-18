@@ -1,0 +1,2129 @@
+import { useEffect, useState } from "react";
+import { api, clearToken, type SbBet } from "../api";
+import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
+import Duel from "./Duel";
+import GameArt, { SYMBOL_GLYPH } from "./GameArt";
+import Sportsbook from "./Sportsbook";
+
+type Tab = "board" | "casino" | "wagers" | "figures" | "rules"
+  | "transactions" | "scores" | "settings" | "horses";
+
+const money = (v: string | number) =>
+  Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export default function PlayerView({ onBalance, username }: {
+  onBalance: (b: string) => void; username?: string;
+}) {
+  const [tab, setTab] = useState<Tab>("board");
+  const [fp, setFp] = useState("0");
+  const [menu, setMenu] = useState(false);
+  const [fig, setFig] = useState<Awaited<ReturnType<typeof api.myFigures>> | null>(null);
+
+  const refresh = () => {
+    api.balance().then((b) => setFp(b.free_play)).catch(() => {});
+    api.myFigures().then(setFig).catch(() => {});
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const balanced = (b: string) => { onBalance(b); refresh(); };
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "board", label: "Sportsbook" },
+    { id: "casino", label: "Casino" },
+    { id: "wagers", label: "My Wagers" },
+    { id: "figures", label: "My Figures" },
+    { id: "rules", label: "Rules" },
+  ];
+
+  const MENU: { id: Tab; icon: string; label: string }[] = [
+    { id: "figures", icon: "📈", label: "Weekly Figures" },
+    { id: "wagers", icon: "📝", label: "Pending Wagers" },
+    { id: "transactions", icon: "🔁", label: "Transactions" },
+    { id: "rules", icon: "ℹ️", label: "Rules" },
+    { id: "scores", icon: "🗓️", label: "Scores" },
+    { id: "horses", icon: "🐎", label: "Horses" },
+    { id: "casino", icon: "🎲", label: "Casino" },
+    { id: "settings", icon: "⚙️", label: "Settings" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <nav className="flex flex-wrap items-center gap-1.5">
+        <button onClick={() => setMenu(true)}
+          className="rounded-lg border border-white/5 bg-base-800 shadow-card px-3 py-1.5 text-base leading-none text-gold hover:bg-base-700"
+          aria-label="menu">
+          ☰
+        </button>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              tab === t.id ? "btn-gold text-base-900"
+                : "border border-white/5 bg-base-800 text-slate-300 shadow-card hover:border-white/15 hover:bg-base-700 hover:text-slate-100"}`}>
+            {t.label}
+          </button>
+        ))}
+        {Number(fp) > 0 && (
+          <span className="ml-auto rounded-lg bg-sky-500/15 px-3 py-1.5 font-mono text-xs font-semibold text-sky-300">
+            Free play {money(fp)}
+          </span>
+        )}
+      </nav>
+
+      {/* ------------- the drawer: stats + everything, one tap away ------------- */}
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px]" onClick={() => setMenu(false)} />
+          <aside className="fixed inset-y-0 left-0 z-40 w-[290px] overflow-y-auto border-r border-white/10 bg-base-800/95 shadow-pop backdrop-blur">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <span className="flex items-center gap-2.5 text-sm font-bold text-slate-100">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-b from-gold-400/25 to-gold-600/10 text-xs font-black uppercase text-gold ring-1 ring-gold/30">
+                  {(username ?? "me").slice(0, 2)}
+                </span>
+                {username ?? "My account"}
+              </span>
+              <button onClick={() => setMenu(false)}
+                className="grid h-7 w-7 place-items-center rounded-lg border border-white/10 text-xs text-slate-400 hover:border-white/20 hover:text-slate-200">✕</button>
+            </div>
+
+            <div className="space-y-2 border-b border-white/10 px-4 py-3 text-sm">
+              {([
+                ["Balance", fig?.balance, Number(fig?.balance ?? 0) < 0 ? "text-red-400" : "text-accent"],
+                ["Pending", fig?.pending, "text-amber-300"],
+                ["Available", fig?.available, "text-accent"],
+                ["Free Play", fig?.free_play, "text-sky-300"],
+              ] as const).map(([k, v, cls]) => (
+                <div key={k} className="flex items-baseline justify-between border-b border-base-700/60 pb-1.5 last:border-0 last:pb-0">
+                  <span className="text-slate-400">{k}</span>
+                  <span className={`font-mono font-bold ${cls}`}>{v !== undefined ? money(v) : "…"}</span>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              {MENU.map((m) => (
+                <button key={m.id}
+                  onClick={() => { setTab(m.id); setMenu(false); }}
+                  className={`flex w-full items-center gap-3 border-b border-base-700/60 px-4 py-3 text-left text-sm ${
+                    tab === m.id ? "bg-base-700/60 text-gold" : "text-slate-200 hover:bg-base-700/40"}`}>
+                  <span className="text-base">{m.icon}</span> {m.label}
+                </button>
+              ))}
+              <button onClick={() => { clearToken(); location.reload(); }}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-300 hover:bg-base-700/40">
+                <span className="text-base">⏻</span> Sign Out
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {tab === "board" && <Sportsbook onBalance={balanced} isAdmin={false}
+        onCasino={() => setTab("casino")} onHorses={() => setTab("horses")} />}
+      {tab === "casino" && <Casino onBalance={balanced} />}
+      {tab === "wagers" && <MyWagers />}
+      {tab === "figures" && <MyFigures />}
+      {tab === "rules" && <Rules />}
+      {tab === "transactions" && <MyTransactions />}
+      {tab === "scores" && <Scores />}
+      {tab === "settings" && <Settings />}
+      {tab === "horses" && <Horses onBalance={balanced} />}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------- transactions --
+function MyTransactions() {
+  const [wb, setWb] = useState(0);
+  const [d, setD] = useState<Awaited<ReturnType<typeof api.myTransactions>> | null>(null);
+  useEffect(() => {
+    setD(null);
+    api.myTransactions(wb).then(setD).catch(() => {});
+  }, [wb]);
+
+  const bal = (v: string) =>
+    Number(v) < 0 ? "text-red-400" : Number(v) > 0 ? "text-accent" : "text-slate-400";
+
+  return (
+    <div className="space-y-3">
+      <select value={wb} onChange={(e) => setWb(Number(e.target.value))}
+        className="w-full rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-sm font-semibold text-slate-100 outline-none">
+        {Array.from({ length: 14 }, (_, i) => (
+          <option key={i} value={i}>
+            {i === 0 ? "This Week" : i === 1 ? "Last Week" : `${i} Weeks Ago`}
+          </option>
+        ))}
+      </select>
+
+      {!d ? (
+        <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+          <div className="grid grid-cols-[1fr_90px_100px] gap-2 border-b border-base-600 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <span>Transaction</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">Balance</span>
+          </div>
+          <div className="grid grid-cols-[1fr_90px_100px] items-baseline gap-2 border-b border-base-700/60 px-4 py-2.5">
+            <span className="text-xs italic text-slate-400">Balance Forward</span>
+            <span />
+            <span className={`text-right font-mono text-sm font-bold ${bal(d.balance_forward)}`}>
+              {money(d.balance_forward)}
+            </span>
+          </div>
+          {d.rows.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-slate-500">
+              No transactions this week.
+            </p>
+          )}
+          {d.rows.map((r) => {
+            const n = Number(r.amount);
+            return (
+              <div key={r.id}
+                className="grid grid-cols-[1fr_90px_100px] items-baseline gap-2 border-b border-base-700/60 px-4 py-2 last:border-0">
+                <span className="min-w-0">
+                  <span className="block text-[10px] text-slate-500">
+                    {new Date(r.at).toLocaleString(undefined,
+                      { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  </span>
+                  <span className="block truncate text-xs text-slate-200">{r.description}</span>
+                </span>
+                <span className={`text-right font-mono text-sm font-semibold ${
+                  n > 0 ? "text-accent" : n < 0 ? "text-red-400" : "text-slate-500"}`}>
+                  {n > 0 ? "+" : ""}{money(r.amount)}
+                </span>
+                <span className={`text-right font-mono text-sm font-bold ${bal(r.balance)}`}>
+                  {money(r.balance)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="px-1 text-[11px] leading-relaxed text-slate-500">
+        Cash movements only, with the running balance. Free play is tracked separately
+        on the Figures page.
+      </p>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------- scores --
+function Scores() {
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof api.myScores>> | null>(null);
+  const [league, setLeague] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.myScores().then((r) => {
+      if (!alive) return;
+      setRows(r);
+      setLeague((cur) => {
+        if (cur && r.some((g) => g.league === cur)) return cur;
+        const lv = r.find((g) => g.status === "live");
+        return (lv ?? r[0])?.league ?? "";
+      });
+    }).catch(() => {});
+    load();
+    const t = setInterval(load, 8000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (!rows) return <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>;
+
+  const leagues = [...new Set(rows.map((g) => g.league))];
+  const liveLeagues = new Set(rows.filter((g) => g.status === "live").map((g) => g.league));
+  const games = rows.filter((g) => g.league === league);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-bold text-slate-100">Scoreboard</h3>
+        <span className="text-[10px] text-slate-500">updates every few seconds</span>
+      </div>
+
+      <select value={league} onChange={(e) => setLeague(e.target.value)}
+        className="w-full rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-sm font-bold text-slate-100 outline-none">
+        {leagues.map((l) => (
+          <option key={l} value={l}>{l}{liveLeagues.has(l) ? " ● LIVE" : ""}</option>
+        ))}
+      </select>
+
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+        {games.map((g, i) => {
+          const live = g.status === "live";
+          const final = !live && g.status !== "scheduled" && g.home_score !== null;
+          return (
+            <div key={i} className="border-b border-base-700/60 last:border-0">
+              <div className={`bg-base-900/60 px-4 py-1.5 text-[11px] font-semibold ${
+                live ? "text-red-400" : final ? "text-accent" : "text-slate-400"}`}>
+                {live ? `● LIVE ${g.period ?? ""}` : final ? "Final"
+                  : new Date(g.starts_at).toLocaleString(undefined,
+                      { weekday: "short", month: "short", day: "numeric",
+                        hour: "numeric", minute: "2-digit" })}
+              </div>
+              {([[g.away, g.away_score], [g.home, g.home_score]] as const).map(([team, score], j) => (
+                <div key={j} className="flex items-baseline justify-between px-4 py-1.5">
+                  <span className="flex items-center gap-2 text-sm text-slate-200">
+                    <span className="text-xs">{g.icon}</span> {team}
+                  </span>
+                  <span className={`font-mono text-sm font-bold ${
+                    live ? "text-gold" : final ? "text-slate-100" : "text-transparent"}`}>
+                    {live || final ? score : "0"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        {games.length === 0 && (
+          <p className="px-4 py-8 text-center text-sm text-slate-500">No games in this league.</p>
+        )}
+      </div>
+      <p className="px-1 text-[10px] text-slate-500">
+        Times shown in your device's timezone.
+      </p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ settings --
+function Settings() {
+  const oddsFmt = useOddsFmt();
+  const [fig, setFig] = useState<Awaited<ReturnType<typeof api.myFigures>> | null>(null);
+  useEffect(() => { api.myFigures().then(setFig).catch(() => {}); }, []);
+  const [cur, setCur] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function change() {
+    setMsg(""); setErr("");
+    if (next.length < 6) { setErr("New password needs at least 6 characters."); return; }
+    if (next !== confirm) { setErr("New passwords don't match."); return; }
+    setBusy(true);
+    try {
+      await api.myChangePassword(cur, next);
+      setMsg("Password changed.");
+      setCur(""); setNext(""); setConfirm("");
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const cls = "w-full rounded border border-base-600 bg-base-700 px-3 py-2 text-sm " +
+    "text-slate-200 outline-none focus:border-gold";
+  const PrefRow = ({ k, children }: { k: string; children: React.ReactNode }) => (
+    <div className="flex items-center justify-between border-b border-base-700/60 px-4 py-3 text-sm last:border-0">
+      <span className="text-slate-300">{k}</span>
+      {children}
+    </div>
+  );
+  return (
+    <div className="mx-auto max-w-xl space-y-3">
+      <h3 className="text-base font-bold text-slate-100">My Account</h3>
+
+      {/* -------- the money at a glance, like the reference modal -------- */}
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+        {([
+          ["Balance", fig?.balance, Number(fig?.balance ?? 0) < 0 ? "text-red-400" : "text-accent"],
+          ["Pending", fig?.pending, "text-amber-300"],
+          ["Available", fig?.available, "text-accent"],
+          ["Free Play", fig?.free_play, "text-sky-300"],
+        ] as const).map(([k, v, tone]) => (
+          <div key={k} className="flex items-baseline justify-between border-b border-base-700/60 px-4 py-2.5 last:border-0">
+            <span className="text-sm text-slate-300">{k}</span>
+            <span className={`font-mono text-sm font-bold ${tone}`}>
+              {v !== undefined ? money(v) : "…"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* ------------------------ display preferences ------------------------ */}
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+        <PrefRow k="Available Odds">
+          <select value={oddsFmt} onChange={(e) => setOddsFmt(e.target.value as OddsFmt)}
+            className="rounded-lg bg-base-700 px-3 py-1.5 text-xs font-semibold text-slate-100 outline-none">
+            <option value="american">American (-110)</option>
+            <option value="decimal">Decimal (1.91)</option>
+            <option value="both">Both</option>
+          </select>
+        </PrefRow>
+        <PrefRow k="Game Sort (Display)">
+          <span className="text-xs text-slate-400">By League · By Time</span>
+        </PrefRow>
+        <PrefRow k="Time">
+          <span className="text-xs text-slate-400">Your device's timezone</span>
+        </PrefRow>
+        <PrefRow k="Version">
+          <span className="font-mono text-xs text-slate-400">{APP_VERSION}</span>
+        </PrefRow>
+      </div>
+
+      <Card>
+      <h3 className="mb-3 text-sm font-semibold text-slate-200">Change password</h3>
+      <div className="max-w-sm space-y-3">
+        <label className="block text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Current password</span>
+          <input type="password" value={cur} onChange={(e) => setCur(e.target.value)} className={cls} />
+        </label>
+        <label className="block text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">New password</span>
+          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} className={cls} />
+        </label>
+        <label className="block text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Confirm new password</span>
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={cls} />
+        </label>
+        <button onClick={change} disabled={busy}
+          className="rounded-lg btn-gold px-4 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+          {busy ? "…" : "Change password"}
+        </button>
+        {msg && <p className="text-xs text-accent">{msg}</p>}
+        {err && <p className="text-xs text-red-300">{err}</p>}
+        <p className="pt-2 text-[11px] leading-relaxed text-slate-500">
+          For limits, credit, or anything about your account standing, talk to
+          your agent.
+        </p>
+      </div>
+      </Card>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ casino --
+function Casino({ onBalance }: { onBalance: (b: string) => void }) {
+  const [lobby, setLobby] = useState<Awaited<ReturnType<typeof api.casinoLobby>> | null>(null);
+  const [cat, setCat] = useState<"all" | "slots" | "table" | "quick">("all");
+  const [game, setGame] = useState<string | null>(null);
+
+  const load = () => {};
+  useEffect(() => {
+    api.casinoLobby().then(setLobby).catch(() => {});
+  }, []);
+
+  if (game) {
+    return (
+      <div className="space-y-3">
+        <button onClick={() => setGame(null)}
+          className="rounded-lg border border-white/5 bg-base-800 shadow-card px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-base-700">
+          ← Casino lobby
+        </button>
+        <div className="mx-auto max-w-2xl">
+          <div className="min-w-0">
+            {game === "duel" && <Duel onBalance={onBalance} onNonce={() => load()} />}
+            {game === "blackjack" && <Blackjack onBalance={onBalance} onPlayed={load} />}
+            {game === "dice" && <DiceGame onBalance={onBalance} onPlayed={load} />}
+            {game === "wheel" && <WheelGame onBalance={onBalance} onPlayed={load} />}
+            {game === "roulette" && <Roulette onBalance={onBalance} onPlayed={load} />}
+            {game === "videopoker" && <VideoPoker onBalance={onBalance} onPlayed={load} />}
+            {game === "baccarat" && <Baccarat onBalance={onBalance} onPlayed={load} />}
+            {game === "mines" && <Mines onBalance={onBalance} onPlayed={load} />}
+            {game === "plinko" && (() => {
+              const def = lobby?.games.find((g) => g.key === "plinko");
+              return def?.plinko
+                ? <Plinko def={def.plinko} onBalance={onBalance} onPlayed={load} />
+                : null;
+            })()}
+            {game === "crash" && <Crash onBalance={onBalance} onPlayed={load} />}
+            {game.startsWith("slot:") && (() => {
+              const def = lobby?.games.find((g) => g.key === game);
+              return def?.slot
+                ? <SlotGame def={def} onBalance={onBalance} onPlayed={load} />
+                : null;
+            })()}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const games = (lobby?.games ?? []).filter((g) => cat === "all" || g.category === cat);
+  return (
+    <div className="mx-auto max-w-3xl space-y-3">
+      <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-center text-xs font-semibold">
+        {([["all", "Lobby"], ["slots", "Slots"], ["table", "Table Games"], ["quick", "Quick Games"]] as const)
+          .map(([id, label]) => (
+          <button key={id} onClick={() => setCat(id)}
+            className={`py-2.5 transition ${
+              cat === id ? "btn-gold text-base-900" : "text-slate-300 hover:bg-base-700"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {games.map((g) => (
+          <button key={g.key} onClick={() => setGame(g.key)}
+            className="group overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-left transition hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-pop">
+            <div className="relative h-28 overflow-hidden">
+              <div className="h-full w-full transition duration-300 group-hover:scale-105">
+                <GameArt k={g.key} />
+              </div>
+            </div>
+            <div className="p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-bold text-slate-100">{g.name}</span>
+              </div>
+              <div className="mt-0.5 font-mono text-[11px] text-slate-400">
+                Min: {Number(g.min).toFixed(2)} · Max: {Number(g.max).toFixed(2)}
+              </div>
+              <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{g.rules}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+      <p className="px-1 text-[10px] leading-relaxed text-slate-500">
+        Table games, slots and quick games, all against the house book. Every game
+        settles instantly to your balance and shows in your weekly figures.
+      </p>
+    </div>
+  );
+}
+
+
+// ----------------------------------------------------------------- slots ----
+function SlotSymbol({ sym, size = "text-4xl" }: { sym: string; size?: string }) {
+  const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
+  if (spec.cls === "slot-bar") {
+    return (
+      <span className="rounded-md btn-gold px-2 py-0.5 font-sans text-sm font-black tracking-tight text-base-900">
+        BAR
+      </span>
+    );
+  }
+  if (spec.cls === "slot-gold") {
+    return (
+      <span className={`${size} font-black bg-gradient-to-b from-gold-400 to-gold-600 bg-clip-text text-transparent`}>
+        {spec.g}
+      </span>
+    );
+  }
+  if (spec.cls === "slot-blank") {
+    return <span className={`${size} text-slate-600`}>—</span>;
+  }
+  return <span className={size}>{spec.g}</span>;
+}
+
+function SlotGame({ def, onBalance, onPlayed }: {
+  def: { key: string; name: string; min: string; max: string; edge: string;
+         rules: string; slot?: import("../api").SlotDef };
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const slot = def.slot!;
+  const [stake, setStake] = useState("10");
+  const [reels, setReels] = useState<string[]>([slot.symbols[0], slot.symbols[1], slot.symbols[2] ?? slot.symbols[0]]);
+  const [spinning, setSpinning] = useState(false);
+  const [last, setLast] = useState<{ multiplier: string; payout: string; win: boolean } | null>(null);
+  const [err, setErr] = useState("");
+
+  async function spin() {
+    setErr(""); setLast(null); setSpinning(true);
+    const tick = window.setInterval(() => {
+      setReels(slot.symbols.map(() => slot.symbols[Math.floor(Math.random() * slot.symbols.length)]).slice(0, 3));
+    }, 75);
+    const started = Date.now();
+    try {
+      const r = await api.slotSpin(slot.machine, stake);
+      const wait = Math.max(0, 800 - (Date.now() - started));
+      await new Promise((res) => setTimeout(res, wait));
+      window.clearInterval(tick);
+      setReels(r.reels);
+      setLast({ multiplier: r.multiplier, payout: r.payout, win: r.win });
+      onBalance(r.balance);
+      onPlayed();
+    } catch (e: any) {
+      window.clearInterval(tick);
+      setErr(e.message);
+    } finally {
+      setSpinning(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h3 className="text-sm font-bold text-slate-100">🎰 {def.name}</h3>
+
+        </div>
+
+        {/* the machine */}
+        <div className="rounded-xl border border-gold/25 bg-gradient-to-b from-base-900 to-base-950 p-4">
+          <div className="mx-auto grid max-w-xs grid-cols-3 gap-2">
+            {reels.map((sym, i) => (
+              <div key={i}
+                className={`grid h-24 place-items-center overflow-hidden rounded-lg border bg-base-900 ${
+                  last && last.win && !spinning
+                    ? "border-accent/60 shadow-[0_0_18px_-4px_rgba(74,222,128,0.5)]"
+                    : "border-white/10"} ${spinning ? "animate-pulse" : ""}`}>
+                <SlotSymbol sym={sym} />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 text-center text-sm font-bold">
+            {spinning ? (
+              <span className="text-slate-400">Spinning…</span>
+            ) : last ? (
+              last.win ? (
+                <span className="text-accent">WIN {last.multiplier}× — paid {money(last.payout)}</span>
+              ) : (
+                <span className="text-slate-500">No hit — spin again</span>
+              )
+            ) : (
+              <span className="text-slate-500">Good luck.</span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-end gap-2">
+          <label className="text-xs">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+            <input value={stake} onChange={(e) => setStake(e.target.value)}
+              className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+          </label>
+          <button onClick={spin} disabled={spinning}
+            className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            {spinning ? "…" : "Spin"}
+          </button>
+        </div>
+        {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      </div>
+
+      {/* the paytable IS the game -- printed in full */}
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+        <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Paytable</h4>
+        <div className="space-y-1.5">
+          {Object.entries(slot.triples).map(([sym, mult]) => (
+            <div key={sym} className="flex items-center justify-between rounded-lg bg-base-900/50 px-3 py-1.5">
+              <span className="flex items-center gap-1.5">
+                <SlotSymbol sym={sym} size="text-lg" />
+                <SlotSymbol sym={sym} size="text-lg" />
+                <SlotSymbol sym={sym} size="text-lg" />
+              </span>
+              <span className="font-mono text-sm font-bold text-gold">{mult}×</span>
+            </div>
+          ))}
+          {slot.partial && (
+            <>
+              <div className="flex items-center justify-between rounded-lg bg-base-900/50 px-3 py-1.5">
+                <span className="flex items-center gap-1.5">
+                  <SlotSymbol sym={slot.partial.symbol} size="text-lg" />
+                  <SlotSymbol sym={slot.partial.symbol} size="text-lg" />
+                  <span className="text-xs text-slate-500">any two spots</span>
+                </span>
+                <span className="font-mono text-sm font-bold text-slate-200">{slot.partial.two}×</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-base-900/50 px-3 py-1.5">
+                <span className="flex items-center gap-1.5">
+                  <SlotSymbol sym={slot.partial.symbol} size="text-lg" />
+                  <span className="text-xs text-slate-500">any one spot</span>
+                </span>
+                <span className="font-mono text-sm font-bold text-slate-200">{slot.partial.one}×</span>
+              </div>
+            </>
+          )}
+        </div>
+        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+          Three reels, one line. Line up a triple to hit the big pays.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+// -------------------------------------------------------------- roulette ----
+const RL_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+type RlBet = { kind: string; pick?: number | null; stake: string; label: string };
+
+function Roulette({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("5");
+  const [bets, setBets] = useState<RlBet[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [last, setLast] = useState<{ pocket: number; color: string; payout: string } | null>(null);
+
+  const add = (kind: string, pick: number | null, label: string) => {
+    setErr("");
+    if (bets.length >= 15) { setErr("15 bets max per spin"); return; }
+    setBets([...bets, { kind, pick, stake, label }]);
+  };
+  const total = bets.reduce((a, b) => a + Number(b.stake), 0);
+
+  async function spin() {
+    setErr(""); setBusy(true); setLast(null);
+    try {
+      const r = await api.rouletteSpin(bets.map(({ kind, pick, stake }) => ({ kind, pick, stake })));
+      setLast(r); onBalance(r.balance); onPlayed(); setBets([]);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const numBtn = (n: number) => (
+    <button key={n} onClick={() => add("straight", n, `#${n}`)}
+      className={`h-9 rounded-md text-xs font-bold text-white transition hover:brightness-125 ${
+        n === 0 ? "col-span-2 bg-green-700" : RL_RED.has(n) ? "bg-red-800" : "bg-base-900 border border-white/10"}`}>
+      {n}
+    </button>
+  );
+
+  const OUTSIDE: [string, number | null, string][] = [
+    ["red", null, "Red"], ["black", null, "Black"], ["even", null, "Even"],
+    ["odd", null, "Odd"], ["low", null, "1–18"], ["high", null, "19–36"],
+    ["dozen", 0, "1st 12"], ["dozen", 1, "2nd 12"], ["dozen", 2, "3rd 12"],
+    ["column", 0, "Col 1"], ["column", 1, "Col 2"], ["column", 2, "Col 3"],
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h3 className="text-sm font-bold text-slate-100">🎯 Roulette</h3>
+          <span className="font-mono text-[10px] text-slate-500">European</span>
+        </div>
+
+        {last && (
+          <div className={`mb-3 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
+            Number(last.payout) > 0
+              ? "border-accent/40 bg-accent/10 text-accent"
+              : "border-white/10 bg-base-900/60 text-slate-400"}`}>
+            <span className={`mr-2 inline-grid h-7 w-7 place-items-center rounded-full align-middle text-white ${
+              last.color === "green" ? "bg-green-700" : last.color === "red" ? "bg-red-700" : "bg-base-900 border border-white/20"}`}>
+              {last.pocket}
+            </span>
+            {Number(last.payout) > 0 ? `Paid ${money(last.payout)}` : "House takes it"}
+          </div>
+        )}
+
+        <div className="grid grid-cols-6 gap-1">{Array.from({ length: 37 }, (_, n) => numBtn(n))}</div>
+        <div className="mt-2 grid grid-cols-3 gap-1">
+          {OUTSIDE.map(([k, pick, label]) => (
+            <button key={label} onClick={() => add(k, pick, label)}
+              className="h-8 rounded-md border border-white/10 bg-base-700/70 text-[11px] font-semibold text-slate-200 hover:border-gold/40 hover:bg-base-600">
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex items-end gap-2">
+          <label className="text-xs">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Chip</span>
+            <input value={stake} onChange={(e) => setStake(e.target.value)}
+              className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+          </label>
+          <button onClick={spin} disabled={busy || bets.length === 0}
+            className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            {busy ? "…" : `Spin${total ? ` (${money(total)})` : ""}`}
+          </button>
+        </div>
+
+        {bets.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {bets.map((b, i) => (
+              <button key={i} onClick={() => setBets(bets.filter((_, j) => j !== i))}
+                className="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 font-mono text-[10px] text-gold hover:bg-red-500/20 hover:text-red-300">
+                {b.label} · {money(b.stake)} ✕
+              </button>
+            ))}
+          </div>
+        )}
+        {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+          Tap the layout to place chips, tap a chip to take it back. Straight up pays 35:1,
+          dozens/columns 2:1, even-money bets 1:1.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------- video poker ----
+function VideoPoker({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [round, setRound] = useState<number | null>(null);
+  const [hand, setHand] = useState<string[]>([]);
+  const [holds, setHolds] = useState<boolean[]>([false, false, false, false, false]);
+  const [paytable, setPaytable] = useState<[string, string][]>([]);
+  const [result, setResult] = useState<{ result: string; payout: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.vpActive().then((r) => {
+      if (r.active) {
+        setRound(r.active.round_id); setHand(r.active.hand);
+        setPaytable(r.active.paytable);
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function deal() {
+    setErr(""); setBusy(true); setResult(null);
+    try {
+      const r = await api.vpDeal(stake);
+      setRound(r.round_id); setHand(r.hand); setPaytable(r.paytable);
+      setHolds([false, false, false, false, false]);
+      onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  async function draw() {
+    if (round === null) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.vpDraw(round, holds);
+      setHand(r.hand); setResult({ result: r.result, payout: r.payout });
+      setRound(null); onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const open = round !== null;
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+        <div className="mb-1 flex items-baseline justify-between">
+          <h3 className="text-sm font-bold text-slate-100">🂡 Video Poker</h3>
+          <span className="font-mono text-[10px] text-slate-500">Jacks or Better · 9/6</span>
+        </div>
+        <p className="mb-3 text-[10px] text-slate-500">
+          Five cards. Tap the ones to HOLD, draw once, get paid on the table below.
+        </p>
+
+        {hand.length > 0 && (
+          <div className="mb-3 flex justify-center gap-2">
+            {hand.map((c, i) => (
+              <button key={i} disabled={!open}
+                onClick={() => setHolds(holds.map((h, j) => (j === i ? !h : h)))}
+                className="flex flex-col items-center gap-1">
+                <span className={holds[i] && open ? "rounded-lg ring-2 ring-gold" : ""}>
+                  <PlayingCard c={c} />
+                </span>
+                <span className={`text-[9px] font-bold uppercase tracking-wide ${
+                  holds[i] && open ? "text-gold" : "text-slate-600"}`}>
+                  {open ? (holds[i] ? "Held" : "Hold") : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {result && (
+          <div className={`mb-3 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
+            Number(result.payout) > 0
+              ? "border-accent/40 bg-accent/10 text-accent"
+              : "border-white/10 bg-base-900/60 text-slate-400"}`}>
+            {result.result}{Number(result.payout) > 0 ? ` — paid ${money(result.payout)}` : ""}
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          <label className="text-xs">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+            <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={open}
+              className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+          </label>
+          {open ? (
+            <button onClick={draw} disabled={busy}
+              className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+              Draw
+            </button>
+          ) : (
+            <button onClick={deal} disabled={busy}
+              className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+              Deal
+            </button>
+          )}
+        </div>
+        {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      </div>
+
+      {paytable.length > 0 && (
+        <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Paytable</h4>
+          <div className="space-y-1">
+            {paytable.map(([name, mult]) => (
+              <div key={name} className="flex justify-between rounded-lg bg-base-900/50 px-3 py-1.5 text-xs">
+                <span className="text-slate-300">{name}</span>
+                <span className="font-mono font-bold text-gold">{mult}×</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- baccarat ----
+function Baccarat({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [bet, setBet] = useState<"player" | "banker" | "tie">("banker");
+  const [stake, setStake] = useState("10");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState<Awaited<ReturnType<typeof api.baccaratDeal>> | null>(null);
+
+  async function deal() {
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.baccaratDeal(bet, stake);
+      setD(r); onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const side = (label: string, cards: string[], total: number, winner: boolean, tone: string) => (
+    <div className={`flex-1 rounded-lg border p-3 text-center ${
+      winner ? "border-accent/50 bg-accent/5" : "border-white/10 bg-base-900/50"}`}>
+      <div className={`mb-2 text-[10px] font-bold uppercase tracking-widest ${tone}`}>{label}</div>
+      <div className="flex justify-center gap-1.5">{cards.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+      <div className="mt-2 font-mono text-lg font-black text-slate-100">{total}</div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-1 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🀄 Baccarat</h3>
+        <span className="font-mono text-[10px] text-slate-500">8-deck shoe · punto banco</span>
+      </div>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Standard third-card rules. Banker win pays 0.95:1 · player 1:1 · tie 8:1.
+        Player/banker bets push on a tie.
+      </p>
+
+      {d && (
+        <>
+          <div className="mb-2 flex gap-2">
+            {side("Player", d.player, d.player_total, d.outcome === "player", "text-sky-300")}
+            {side("Banker", d.banker, d.banker_total, d.outcome === "banker", "text-red-300")}
+          </div>
+          <div className={`mb-3 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
+            Number(d.payout) > Number(d.multiplier === "1" ? "0" : "0") && Number(d.payout) > 0
+              ? Number(d.multiplier) > 1
+                ? "border-accent/40 bg-accent/10 text-accent"
+                : "border-white/10 bg-base-900/60 text-slate-300"
+              : "border-white/10 bg-base-900/60 text-slate-400"}`}>
+            {d.outcome === "tie" ? "TIE" : `${d.outcome.toUpperCase()} wins`}
+            {Number(d.payout) > 0
+              ? Number(d.multiplier) === 1 ? " — push, stake back" : ` — paid ${money(d.payout)}`
+              : " — house takes it"}
+          </div>
+        </>
+      )}
+
+      <div className="mb-3 grid grid-cols-3 gap-1.5 text-center text-xs font-bold">
+        {([["player", "Player 1:1", "text-sky-300"], ["banker", "Banker 0.95:1", "text-red-300"],
+           ["tie", "Tie 8:1", "text-gold"]] as const).map(([id, label, tone]) => (
+          <button key={id} onClick={() => setBet(id)}
+            className={`rounded-lg border py-2.5 transition ${
+              bet === id ? "border-gold/60 bg-gold/10 " + tone
+                : "border-white/10 bg-base-900/50 text-slate-400 hover:border-white/25"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)}
+            className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+        </label>
+        <button onClick={deal} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+          {busy ? "…" : "Deal"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------- mines ----
+function Mines({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [mines, setMines] = useState(5);
+  const [st, setSt] = useState<import("../api").MinesState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.minesActive().then((r) => { if (r.active) setSt(r.active); }).catch(() => {});
+  }, []);
+
+  const open = st?.status === "open";
+  const done = st?.status === "settled";
+
+  async function run(fn: () => Promise<import("../api").MinesState>) {
+    setErr(""); setBusy(true);
+    try {
+      const r = await fn();
+      setSt(r);
+      if (r.balance) onBalance(r.balance);
+      onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const cellState = (i: number): "hidden" | "safe" | "mine" | "boom" => {
+    if (!st) return "hidden";
+    if (st.revealed.includes(i)) return "safe";
+    if (done && st.layout?.includes(i)) return st.outcome === "bust" ? "boom" : "mine";
+    return "hidden";
+  };
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-1 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">💣 Mines</h3>
+      </div>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Pick tiles, dodge the mines, cash out whenever. More mines, bigger multipliers.
+      </p>
+
+      <div className="mx-auto grid max-w-[300px] grid-cols-5 gap-1.5">
+        {Array.from({ length: 25 }, (_, i) => {
+          const cs = cellState(i);
+          return (
+            <button key={i} disabled={!open || busy || cs !== "hidden"}
+              onClick={() => st && run(() => api.minesReveal(st.round_id, i))}
+              className={`grid aspect-square place-items-center rounded-lg border text-xl transition ${
+                cs === "safe" ? "border-accent/50 bg-accent/10"
+                : cs === "boom" ? "border-red-500/70 bg-red-500/20"
+                : cs === "mine" ? "border-red-500/30 bg-base-900/60 opacity-70"
+                : open ? "border-white/10 bg-base-700/70 hover:border-gold/40 hover:bg-base-600"
+                : "border-white/5 bg-base-900/50"}`}>
+              {cs === "safe" ? "💎" : cs === "boom" ? "💥" : cs === "mine" ? "💣" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 text-center text-sm font-bold">
+        {open && st && (
+          <span className="text-slate-300">
+            {st.revealed.length === 0 ? `First pick pays ${st.next_multiplier}×`
+              : `Sitting on ${st.multiplier}× — next ${st.next_multiplier ?? "—"}×`}
+          </span>
+        )}
+        {done && st && (
+          st.outcome === "bust"
+            ? <span className="text-red-400">BOOM — stake gone</span>
+            : <span className="text-accent">Cashed {st.multiplier}× — paid {money(st.payout ?? "0")}</span>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={open}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Mines</span>
+          <select value={mines} onChange={(e) => setMines(Number(e.target.value))} disabled={open}
+            className="rounded-lg bg-base-700 px-2 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50">
+            {[1, 3, 5, 10, 15, 20, 24].map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </label>
+        {open && st ? (
+          <button onClick={() => run(() => api.minesCashout(st.round_id))}
+            disabled={busy || st.revealed.length === 0}
+            className="ml-auto rounded-lg bg-accent px-6 py-2 text-sm font-black uppercase tracking-wider text-base-900 hover:brightness-110 disabled:opacity-50">
+            Cash out {st.revealed.length > 0 ? `${st.multiplier}×` : ""}
+          </button>
+        ) : (
+          <button onClick={() => run(() => api.minesStart(stake, mines))} disabled={busy}
+            className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            Start
+          </button>
+        )}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------- plinko ----
+function Plinko({ def, onBalance, onPlayed }: {
+  def: import("../api").PlinkoDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [rows, setRows] = useState(12);
+  const [risk, setRisk] = useState<"low" | "medium" | "high">("medium");
+  const [stake, setStake] = useState("10");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [ball, setBall] = useState<{ row: number; x: number } | null>(null);
+  const [landed, setLanded] = useState<number | null>(null);
+  const [last, setLast] = useState<{ multiplier: string; payout: string } | null>(null);
+
+  const table = def.tables[String(rows)]?.[risk] ?? [];
+
+  async function drop() {
+    setErr(""); setBusy(true); setLast(null); setLanded(null);
+    try {
+      const r = await api.plinkoDrop(stake, rows, risk);
+      onBalance(r.balance);
+      // walk the real path down the board, one row at a time
+      let x = 0;
+      for (let i = 0; i < r.path.length; i++) {
+        x += r.path[i];
+        const fx = x;
+        window.setTimeout(() => setBall({ row: i + 1, x: fx }), 90 * (i + 1));
+      }
+      window.setTimeout(() => {
+        setBall(null);
+        setLanded(r.bucket);
+        setLast({ multiplier: r.multiplier, payout: r.payout });
+        onPlayed();
+        setBusy(false);
+      }, 90 * (r.path.length + 2));
+    } catch (e: any) {
+      setErr(e.message); setBusy(false);
+    }
+  }
+
+  // board geometry: viewBox units
+  const W = 340, PAD = 22;
+  const stepY = (200 - 20) / rows;
+  const stepX = (W - PAD * 2) / rows;
+  const px = (row: number, i: number) => W / 2 + (i - row / 2) * stepX;
+
+  const pegs: React.ReactNode[] = [];
+  for (let r = 1; r <= rows; r++) {
+    for (let i = 0; i <= r; i++) {
+      pegs.push(<circle key={`${r}-${i}`} cx={px(r, i)} cy={14 + r * stepY}
+        r={rows === 16 ? 2.2 : 3} fill="#3b4a63" />);
+    }
+  }
+
+  const bWidth = (W - PAD * 2) / (rows + 1);
+  const hot = (m: string) => Number(m) >= 10 ? "#f0b429"
+    : Number(m) >= 2 ? "#f59e0b" : Number(m) >= 1 ? "#4ade80" : "#334155";
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-1 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🔻 Plinko</h3>
+      </div>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Drop the ball through the pegs — rim buckets pay big, the middle eats the stake.
+      </p>
+
+      <div className="rounded-xl border border-white/10 bg-gradient-to-b from-base-900 to-base-950 p-2">
+        <svg viewBox={`0 0 ${W} 232`} className="w-full">
+          {pegs}
+          {ball && (
+            <circle cx={px(ball.row, ball.x)} cy={14 + ball.row * stepY - stepY / 2}
+              r="5" fill="#f0b429" />
+          )}
+          {table.map((m, i) => (
+            <g key={i}>
+              <rect x={PAD + i * bWidth + 0.5} y={210}
+                width={bWidth - 1} height={18} rx="3"
+                fill={landed === i ? "#f0b429" : "rgba(255,255,255,0.06)"}
+                stroke={landed === i ? "#f7ca5e" : hot(m)} strokeWidth="1" />
+              <text x={PAD + i * bWidth + bWidth / 2} y={222}
+                textAnchor="middle"
+                fontSize={rows === 16 ? 5.4 : rows === 12 ? 6.5 : 8}
+                fontWeight="700"
+                fill={landed === i ? "#0b0e14" : "#cbd5e1"}>
+                {Number(m) >= 100 ? Number(m).toFixed(0) : m}x
+              </text>
+            </g>
+          ))}
+        </svg>
+        <div className="pb-1 text-center text-sm font-bold">
+          {busy && !last ? <span className="text-slate-400">…</span>
+            : last ? (Number(last.payout) > Number(stake)
+              ? <span className="text-accent">{last.multiplier}× — paid {money(last.payout)}</span>
+              : Number(last.payout) > 0
+                ? <span className="text-slate-300">{last.multiplier}× — back {money(last.payout)}</span>
+                : <span className="text-slate-500">{last.multiplier}× — swallowed</span>)
+            : <span className="text-slate-500">Pick your board and drop.</span>}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Rows</span>
+          <select value={rows} onChange={(e) => setRows(Number(e.target.value))} disabled={busy}
+            className="rounded-lg bg-base-700 px-2 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50">
+            {def.rows.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </label>
+        <div className="flex gap-1">
+          {(["low", "medium", "high"] as const).map((r) => (
+            <button key={r} onClick={() => setRisk(r)} disabled={busy}
+              className={`rounded-lg px-3 py-2 text-xs font-bold capitalize ${
+                risk === r ? "btn-gold text-base-900"
+                  : "bg-base-700 text-slate-300 hover:bg-base-600"}`}>
+              {r}
+            </button>
+          ))}
+        </div>
+        <button onClick={drop} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+          Drop
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------- crash ----
+function Crash({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [auto, setAuto] = useState("");
+  const [flying, setFlying] = useState<{ id: number; rate: number; t0: number } | null>(null);
+  const [mult, setMult] = useState("1.00");
+  const [res, setRes] = useState<{ won: boolean; point: string; multiplier: string | null; payout: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.crashActive().then((r) => {
+      if (r.active) setFlying({ id: r.active.round_id, rate: r.active.rate,
+                                t0: new Date(r.active.started_at).getTime() });
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!flying) return;
+    const iv = window.setInterval(() => {
+      const secs = (Date.now() - flying.t0) / 1000;
+      setMult(Math.min(1000, Math.exp(flying.rate * Math.max(0, secs))).toFixed(2));
+    }, 60);
+    return () => window.clearInterval(iv);
+  }, [flying]);
+
+  async function start() {
+    setErr(""); setBusy(true); setRes(null);
+    try {
+      const r = await api.crashStart(stake, auto.trim() || undefined);
+      onBalance(r.balance);
+      if (r.status === "open" && r.rate && r.started_at) {
+        setFlying({ id: r.round_id, rate: r.rate, t0: new Date(r.started_at).getTime() });
+        setMult("1.00");
+      } else {
+        setRes({ won: !!r.won, point: r.point!, multiplier: r.multiplier ?? null, payout: r.payout! });
+        onPlayed();
+      }
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  async function cashout() {
+    if (!flying) return;
+    setBusy(true);
+    try {
+      const r = await api.crashCashout(flying.id);
+      setRes({ won: r.won, point: r.point, multiplier: r.multiplier, payout: r.payout });
+      setFlying(null); onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-1 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🚀 Crash</h3>
+      </div>
+      <p className="mb-3 text-[10px] text-slate-500">
+        The multiplier climbs until it busts. Cash out first — or set an auto target
+        and it resolves instantly.
+      </p>
+
+      <div className={`mb-3 grid h-36 place-items-center rounded-xl border ${
+        flying ? "border-accent/40 bg-gradient-to-b from-base-900 to-base-950"
+        : res ? (res.won ? "border-accent/40 bg-base-900/70" : "border-red-500/40 bg-base-900/70")
+        : "border-white/10 bg-base-900/70"}`}>
+        {flying ? (
+          <div className="text-center">
+            <div className="font-mono text-5xl font-black text-accent">{mult}×</div>
+            <div className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">climbing…</div>
+          </div>
+        ) : res ? (
+          <div className="text-center">
+            {res.won ? (
+              <>
+                <div className="font-mono text-4xl font-black text-accent">{res.multiplier}×</div>
+                <div className="mt-1 text-sm font-bold text-accent">Cashed out — paid {money(res.payout)}</div>
+                <div className="mt-0.5 text-[10px] text-slate-500">it went on to bust at {res.point}×</div>
+              </>
+            ) : (
+              <>
+                <div className="font-mono text-4xl font-black text-red-400">💥 {res.point}×</div>
+                <div className="mt-1 text-sm font-bold text-red-400">Busted before you cashed</div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="font-mono text-4xl font-black text-slate-600">1.00×</div>
+        )}
+      </div>
+
+      <div className="flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={!!flying}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Auto @</span>
+          <input value={auto} onChange={(e) => setAuto(e.target.value)} disabled={!!flying}
+            placeholder="off"
+            className="w-16 rounded-lg bg-base-700 px-2 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        {flying ? (
+          <button onClick={cashout} disabled={busy}
+            className="ml-auto animate-pulse rounded-lg bg-accent px-6 py-2 text-sm font-black uppercase tracking-wider text-base-900 hover:brightness-110 disabled:opacity-50">
+            Cash out {mult}×
+          </button>
+        ) : (
+          <button onClick={start} disabled={busy}
+            className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            Launch
+          </button>
+        )}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- blackjack --
+function PlayingCard({ c }: { c: string }) {
+  if (c === "??") {
+    return (
+      <span className="grid h-16 w-11 place-items-center rounded-lg bg-gradient-to-br from-base-600 to-base-700 text-lg text-gold/60 shadow-card ring-1 ring-white/10"
+        style={{ backgroundImage: "repeating-linear-gradient(45deg, rgba(240,180,41,.07) 0 4px, transparent 4px 8px)" }}>
+        🂠
+      </span>
+    );
+  }
+  const suit = c[1];
+  const red = suit === "h" || suit === "d";
+  const SUIT: Record<string, string> = { s: "♠", h: "♥", d: "♦", c: "♣" };
+  return (
+    <span className={`grid h-16 w-11 place-items-center rounded-lg bg-gradient-to-b from-white to-slate-200 text-base font-bold shadow-card ring-1 ring-slate-300 ${
+      red ? "text-red-600" : "text-slate-900"}`}>
+      {c[0] === "T" ? "10" : c[0]}{SUIT[suit]}
+    </span>
+  );
+}
+
+function Blackjack({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [hand, setHand] = useState<import("../api").BjHand | null>(null);
+  const [stake, setStake] = useState("10");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.bjActive().then((r) => { if (r.active) setHand(r.active); }).catch(() => {});
+  }, []);
+
+  const done = hand?.status === "settled";
+  async function run(fn: () => Promise<import("../api").BjHand>) {
+    setErr(""); setBusy(true);
+    try {
+      const h = await fn();
+      setHand(h);
+      if (h.balance) onBalance(h.balance);
+      onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  const OUTCOME: Record<string, [string, string]> = {
+    blackjack: ["BLACKJACK — pays 3:2", "text-gold"],
+    win: ["You win", "text-accent"],
+    push: ["Push — stake back", "text-slate-300"],
+    lose: ["House takes it", "text-red-400"],
+  };
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <h3 className="mb-1 text-sm font-bold text-slate-100">🃏 Blackjack</h3>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Single deck each hand · dealer stands all 17s · blackjack pays 3:2 ·
+        double any first two cards · no splits.
+      </p>
+
+      {hand && (
+        <div className="mb-3 space-y-3 rounded-lg bg-base-900/70 p-4">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Dealer {hand.dealer_total !== null && `— ${hand.dealer_total}`}
+            </div>
+            <div className="flex gap-1.5">{hand.dealer.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+          </div>
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
+              You — {hand.player_total}{hand.doubled ? " · doubled" : ""}
+            </div>
+            <div className="flex gap-1.5">{hand.player.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+          </div>
+          {done && hand.outcome && (
+            <div className={`text-sm font-bold ${OUTCOME[hand.outcome]?.[1] ?? ""}`}>
+              {OUTCOME[hand.outcome]?.[0]}
+              {hand.payout && Number(hand.payout) > 0 && (
+                <span className="ml-2 font-mono">+{money(hand.payout)}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(!hand || done) ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={stake} inputMode="decimal"
+            onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
+            className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+          {["5", "10", "25", "100"].map((v) => (
+            <button key={v} onClick={() => setStake(v)}
+              className="rounded-lg bg-base-700 px-2.5 py-2 text-xs text-slate-300 hover:bg-base-600">{v}</button>
+          ))}
+          <button onClick={() => run(() => api.bjDeal(stake))} disabled={busy}
+            className="ml-auto rounded-lg btn-gold px-5 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+            {busy ? "…" : "Deal"}
+          </button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <button onClick={() => run(() => api.bjAction(hand.round_id, "hit"))} disabled={busy}
+            className="flex-1 rounded-lg bg-base-700 py-2.5 text-sm font-bold text-slate-100 hover:bg-base-600 disabled:opacity-50">
+            Hit
+          </button>
+          <button onClick={() => run(() => api.bjAction(hand.round_id, "stand"))} disabled={busy}
+            className="flex-1 rounded-lg btn-gold py-2.5 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+            Stand
+          </button>
+          {hand.can_double && (
+            <button onClick={() => run(() => api.bjAction(hand.round_id, "double"))} disabled={busy}
+              className="flex-1 rounded-lg bg-sky-600 py-2.5 text-sm font-bold text-white hover:bg-sky-500 disabled:opacity-50">
+              Double
+            </button>
+          )}
+        </div>
+      )}
+      {err && <div className="mt-2 rounded bg-red-950 px-3 py-2 text-xs text-red-300">{err}</div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- dice --
+function DiceGame({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [chance, setChance] = useState(50);
+  const [stake, setStake] = useState("10");
+  const [last, setLast] = useState<Awaited<ReturnType<typeof api.diceBet>> | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mult = (96 / chance).toFixed(4);
+
+  async function roll() {
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.diceBet(stake, String(chance));
+      setLast(r); onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <h3 className="mb-1 text-sm font-bold text-slate-100">🎲 Dice</h3>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Roll under your number and win — the longer the shot, the bigger the payout.
+      </p>
+
+      <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+        <span>Win chance: <span className="font-mono font-bold text-slate-100">{chance}%</span></span>
+        <span>Pays <span className="font-mono font-bold text-gold">{mult}x</span></span>
+      </div>
+      <input type="range" min={2} max={95} value={chance}
+        onChange={(e) => setChance(Number(e.target.value))}
+        className="w-full accent-gold" />
+      <div className="relative mt-2 h-3 overflow-hidden rounded-full bg-red-900/60">
+        <div className="h-full bg-accent/70" style={{ width: `${chance}%` }} />
+        {last && (
+          <div className="absolute top-0 h-full w-0.5 bg-white"
+            style={{ left: `${Math.min(99.5, Number(last.roll))}%` }} />
+        )}
+      </div>
+
+      {last && (
+        <div className={`mt-3 rounded-lg px-3 py-2 font-mono text-sm font-bold ${
+          last.win ? "bg-accent/10 text-accent" : "bg-red-950 text-red-300"}`}>
+          rolled {last.roll} — {last.win ? `WIN +${money(last.payout)}` : "lose"}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input value={stake} inputMode="decimal"
+          onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
+          className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+        {["5", "10", "25", "100"].map((v) => (
+          <button key={v} onClick={() => setStake(v)}
+            className="rounded-lg bg-base-700 px-2.5 py-2 text-xs text-slate-300 hover:bg-base-600">{v}</button>
+        ))}
+        <button onClick={roll} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-5 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+          {busy ? "…" : "Roll"}
+        </button>
+      </div>
+      {err && <div className="mt-2 rounded bg-red-950 px-3 py-2 text-xs text-red-300">{err}</div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ wheel --
+function WheelGame({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [risk, setRisk] = useState<"low" | "medium" | "high">("low");
+  const [stake, setStake] = useState("10");
+  const [last, setLast] = useState<Awaited<ReturnType<typeof api.wheelBet>> | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const SEGMENTS: Record<string, [string, string][]> = {
+    low: [["", "0x"], ["", "1.2x"], ["", "1.5x"], ["", "3x"]],
+    medium: [["", "0x"], ["", "2x"], ["", "3x"]],
+    high: [["", "0x"], ["", "4x"], ["", "5x"], ["", "6x"]],
+  };
+
+  async function spin() {
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.wheelBet(stake, risk);
+      setLast(r); onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <h3 className="mb-1 text-sm font-bold text-slate-100">🎡 Wheel</h3>
+      <p className="mb-3 text-[10px] text-slate-500">
+        Pick a risk level and spin — land a multiplier segment and get paid.
+      </p>
+
+      <div className="mb-3 flex gap-1.5">
+        {(["low", "medium", "high"] as const).map((r) => (
+          <button key={r} onClick={() => setRisk(r)}
+            className={`flex-1 rounded-lg py-2 text-xs font-bold capitalize ${
+              risk === r ? "btn-gold text-base-900" : "bg-base-700 text-slate-300 hover:bg-base-600"}`}>
+            {r}
+          </button>
+        ))}
+      </div>
+      <div className="mb-3 flex gap-1">
+        {SEGMENTS[risk].map(([, m], i) => (
+          <div key={i} className={`flex-1 rounded-lg px-1 py-2 text-center ${
+            last && last.risk === risk && last.segment === i
+              ? "bg-gold/20 ring-1 ring-gold" : "bg-base-900"}`}>
+            <div className="font-mono text-sm font-bold text-slate-100">{m}</div>
+          </div>
+        ))}
+      </div>
+
+      {last && (
+        <div className={`rounded-lg px-3 py-2 font-mono text-sm font-bold ${
+          Number(last.payout) > 0 ? "bg-accent/10 text-accent" : "bg-red-950 text-red-300"}`}>
+          {Number(last.payout) > 0
+            ? `${last.multiplier}x — WIN +${money(last.payout)}`
+            : "0x — house takes it"}
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input value={stake} inputMode="decimal"
+          onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
+          className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+        {["5", "10", "25", "100"].map((v) => (
+          <button key={v} onClick={() => setStake(v)}
+            className="rounded-lg bg-base-700 px-2.5 py-2 text-xs text-slate-300 hover:bg-base-600">{v}</button>
+        ))}
+        <button onClick={spin} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-5 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+          {busy ? "…" : "Spin"}
+        </button>
+      </div>
+      {err && <div className="mt-2 rounded bg-red-950 px-3 py-2 text-xs text-red-300">{err}</div>}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------- my wagers --
+function MyWagers({ initial = "open" }: { initial?: "open" | "graded" | "all" }) {
+  const [bets, setBets] = useState<SbBet[] | null>(null);
+  const [filter, setFilter] = useState<"open" | "graded" | "all">(initial);
+
+  useEffect(() => { api.sbMyBets().then(setBets).catch(() => setBets([])); }, []);
+
+  if (!bets) return <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>;
+
+  const shown = bets.filter((b) =>
+    filter === "all" ? true : filter === "open" ? b.status === "open" : b.status !== "open");
+  const tone: Record<string, string> = {
+    won: "text-accent", lost: "text-red-400", void: "text-slate-400",
+    open: "text-amber-300", partial: "text-accent", buyout: "text-slate-400",
+  };
+  const TYPE: Record<string, string> = {
+    single: "Straight", parlay: "Parlay", teaser: "Teaser",
+    if_win: "If-Win", if_action: "If-Action", reverse: "Reverse",
+  };
+
+  const openRisk = bets.filter((b) => b.status === "open" && !b.free_play)
+    .reduce((a, b) => a + Number(b.stake), 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {(["open", "graded", "all"] as const).map((f) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`rounded-full px-3 py-1.5 text-xs capitalize ${
+              filter === f ? "btn-gold font-semibold text-base-900"
+                : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+            {f}
+          </button>
+        ))}
+        {openRisk > 0 && (
+          <span className="ml-auto font-mono text-xs text-slate-400">
+            Riding: <span className="font-bold text-red-300">{money(openRisk)}</span>
+          </span>
+        )}
+      </div>
+
+      {shown.length === 0 ? (
+        <Card><p className="py-8 text-center text-sm text-slate-500">
+          {filter === "open" ? "Nothing riding right now." : "No wagers here yet."}
+        </p></Card>
+      ) : shown.map((b) => (
+        <Card key={b.bet_id}>
+          <div className="mb-2 flex items-center justify-between text-xs">
+            <span className="text-slate-400">
+              #{b.bet_id} · {TYPE[b.type] ?? b.type}
+              {b.free_play && (
+                <span className="ml-1.5 rounded bg-sky-500/20 px-1 text-[9px] font-bold text-sky-300">FP</span>
+              )}
+              {" · "}{money(b.stake)}
+              {isFinite(Number(b.total_odds)) ? ` @ ${Number(b.total_odds).toFixed(2)}` : ""}
+              <span className="ml-2 text-slate-600">
+                {new Date(b.placed_at).toLocaleString(undefined,
+                  { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
+            </span>
+            <span className={`font-semibold uppercase ${tone[b.status] ?? "text-slate-400"}`}>
+              {b.status}
+              {b.payout !== null && Number(b.payout) > 0 && (
+                <span className="ml-2 font-mono">+{money(b.payout)}</span>
+              )}
+            </span>
+          </div>
+          <div className="space-y-1">
+            {b.legs.map((l, i) => (
+              <div key={i}
+                className="flex items-center justify-between gap-2 border-t border-base-700 pt-1 text-[11px] first:border-0 first:pt-0">
+                <div className="min-w-0">
+                  <div className="truncate text-slate-200">{l.selection}</div>
+                  <div className="truncate text-slate-500">{l.event} · {l.market}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3 font-mono">
+                  {l.score && <span className="text-slate-400">{l.score}</span>}
+                  <span className="text-slate-300">{Number(l.odds).toFixed(2)}</span>
+                  <span className={`w-14 text-right font-medium ${tone[l.result ?? "open"] ?? "text-slate-500"}`}>
+                    {l.result ?? "open"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- my figures --
+function MyFigures() {
+  const [sub, setSub] = useState<"figures" | "pending" | "transactions">("figures");
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-center text-xs font-semibold">
+        {(["figures", "pending", "transactions"] as const).map((t) => (
+          <button key={t} onClick={() => setSub(t)}
+            className={`py-2.5 capitalize transition ${
+              sub === t ? "btn-gold text-base-900" : "text-slate-300 hover:bg-base-700"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+      {sub === "figures" && <FiguresSheet />}
+      {sub === "pending" && <PendingTable />}
+      {sub === "transactions" && <MyTransactions />}
+    </div>
+  );
+}
+
+function PendingTable() {
+  const [bets, setBets] = useState<SbBet[] | null>(null);
+  useEffect(() => { api.sbMyBets().then(setBets).catch(() => setBets([])); }, []);
+
+  if (!bets) return <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>;
+  const open = bets.filter((b) => b.status === "open");
+  const TYPE: Record<string, string> = {
+    single: "Straight", parlay: "Parlay", teaser: "Teaser",
+    if_win: "If-Win", if_action: "If-Action", reverse: "Reverse",
+  };
+  const toWin = (b: SbBet) =>
+    b.free_play ? Number(b.potential) : Number(b.potential) - Number(b.stake);
+  const totalRisk = open.reduce((a, b) => a + (b.free_play ? 0 : Number(b.stake)), 0);
+  const totalWin = open.reduce((a, b) => a + toWin(b), 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+        <div className="grid grid-cols-[1fr_80px_80px] gap-2 border-b border-base-600 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          <span>Description</span>
+          <span className="text-right">Risk</span>
+          <span className="text-right">To Win</span>
+        </div>
+        {open.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-500">
+            No data available in table
+          </p>
+        )}
+        {open.map((b) => (
+          <div key={b.bet_id}
+            className="grid grid-cols-[1fr_80px_80px] gap-2 border-b border-base-700/60 px-4 py-2.5 last:border-0">
+            <span className="min-w-0">
+              <span className="block truncate text-xs text-slate-200">
+                {b.legs.length === 1
+                  ? `${b.legs[0].selection} · ${b.legs[0].market}`
+                  : `${TYPE[b.type] ?? b.type} — ${b.legs.length} teams`}
+                {b.free_play && (
+                  <span className="ml-1.5 rounded bg-sky-500/20 px-1 text-[9px] font-bold text-sky-300">FP</span>
+                )}
+              </span>
+              <span className="block truncate text-[10px] text-slate-500">
+                {b.legs.length === 1 ? b.legs[0].event
+                  : b.legs.map((l) => l.selection).join(" / ")}
+              </span>
+            </span>
+            <span className="text-right font-mono text-sm font-semibold text-red-300">
+              {money(b.stake)}
+            </span>
+            <span className="text-right font-mono text-sm font-semibold text-accent">
+              {money(toWin(b))}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-baseline justify-end gap-5 rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-sm">
+        <span className="text-slate-400">Total Risk:{" "}
+          <span className="font-mono font-bold text-red-400">{money(totalRisk)}</span>
+        </span>
+        <span className="text-slate-400">Total Win:{" "}
+          <span className="font-mono font-bold text-accent">{money(totalWin)}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function FiguresSheet() {
+  const [wb, setWb] = useState(0);
+  const [d, setD] = useState<Awaited<ReturnType<typeof api.myFigures>> | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    setD(null);
+    api.myFigures(wb).then(setD).catch((e) => setErr(e.message));
+  }, [wb]);
+
+  if (err) return <Card><p className="py-8 text-center text-sm text-red-300">{err}</p></Card>;
+  if (!d) return <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>;
+
+  const cls = (v: string) => {
+    const n = Number(v);
+    return n > 0 ? "text-accent" : n < 0 ? "text-red-400" : "text-slate-400";
+  };
+  const Row = ({ k, v, strong = false, tone = "" }: {
+    k: string; v: string; strong?: boolean; tone?: string;
+  }) => (
+    <div className={`flex items-baseline justify-between border-b border-base-700/60 px-4 py-2.5 last:border-0 ${
+      strong ? "bg-base-900/50" : ""}`}>
+      <span className={`text-xs ${strong ? "font-bold text-slate-100" : "text-slate-300"}`}>{k}</span>
+      <span className={`font-mono text-sm ${strong ? "font-bold" : "font-semibold"} ${tone || cls(v)}`}>
+        {money(v)}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <select value={wb} onChange={(e) => setWb(Number(e.target.value))}
+          className="flex-1 rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-sm font-semibold text-slate-100 outline-none">
+          <option value={0}>This Week</option>
+          <option value={1}>Last Week</option>
+          <option value={2}>2 Weeks Ago</option>
+          <option value={3}>3 Weeks Ago</option>
+          <option value={4}>4 Weeks Ago</option>
+        </select>
+        {d.settled_this_week && (
+          <span className="rounded-xl bg-accent/15 px-3 py-2.5 text-[10px] font-bold uppercase text-accent">
+            settled
+          </span>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+        <Row k="Carry" v={d.carry} />
+        {d.day_labels.map((l, i) => {
+          const [dow, date] = l.split(" ");
+          return <Row key={l} k={`${dow} (${date})`} v={d.days[i]} />;
+        })}
+        <Row k="Week" v={d.week} strong />
+        <Row k="Transactions" v={d.adjustments} />
+        <Row k="End Balance" v={d.end_balance} strong />
+      </div>
+
+      {Number(d.pending) > 0 && (
+        <div className="rounded-xl bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
+          {money(d.pending)} riding on {d.wagers === 0 ? "open" : ""} pending wagers —
+          not counted in the figure until graded.
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {([["Credit limit", d.credit_limit, "text-slate-200"],
+           ["Available", d.available, "text-accent"],
+           ["Free play", d.free_play, "text-sky-300"]] as const).map(([k, v, tone]) => (
+          <div key={k} className="rounded-xl border border-white/5 bg-base-800 shadow-card p-3">
+            <div className="text-[9px] uppercase tracking-wide text-slate-500">{k}</div>
+            <div className={`font-mono text-sm font-bold ${tone}`}>{money(v)}</div>
+          </div>
+        ))}
+      </div>
+      <p className="px-1 text-[11px] leading-relaxed text-slate-500">{d.note}</p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- rules --
+function Rules() {
+  const S = ({ t, children }: { t: string; children: React.ReactNode }) => (
+    <section className="space-y-1.5">
+      <h4 className="text-xs font-bold uppercase tracking-wide text-gold">{t}</h4>
+      <div className="space-y-1.5 text-[13px] leading-relaxed text-slate-300">{children}</div>
+    </section>
+  );
+  return (
+    <Card>
+      <h3 className="mb-4 text-sm font-bold text-slate-100">House Rules</h3>
+      <div className="max-w-3xl space-y-5">
+        <S t="The week">
+          <p>The betting week runs Tuesday through Monday night. Figures close at the end
+          of Monday and you square up with your agent on Tuesday. A positive figure means
+          you're up; a negative one means you owe. Your balance and figures update in real
+          time on the My Figures page — the number you see is the same number your agent sees.</p>
+        </S>
+        <S t="Wagers">
+          <p>All wagers are action once accepted. A pushed line refunds the stake on that
+          leg. In a parlay, a push drops the leg and the ticket pays on the rest. A game
+          that is postponed or abandoned voids its wagers and refunds stakes. Your agent
+          can void a pending ticket (full refund) or buy it out at an agreed price.</p>
+          <p>Prices move. The price printed on your ticket at acceptance is the price you
+          are paid at, regardless of where the market closes.</p>
+        </S>
+        <S t="Teasers, if-bets, reverses">
+          <p>Teasers cover football and basketball spreads and totals, 2 to 6 teams. Every
+          leg must cover its moved number; a push drops the ticket to the next size down,
+          and a two-teamer with a push is no action. If-bets fire in the order placed —
+          the stake only advances on a win (If-Win) or on anything but a loss (If-Action).
+          A reverse is every ordered pair of your picks as two-team if-action chains.</p>
+        </S>
+        <S t="Live betting">
+          <p>Once a game kicks off, the moneyline stays open and reprices with the game;
+          spreads and totals come off the board. Pregame tickets always stand and grade on
+          the final score.</p>
+        </S>
+        <S t="Free play">
+          <p>Free play rides straights and parlays only. The free play itself is used up
+          win or lose; only the winnings pay, in real credits. A push returns the free play.</p>
+        </S>
+        <S t="Horses">
+          <p>The racebook pays off the morning line, by published fractions: Win pays
+          the line, Place a quarter of it, Show an eighth. Exactas pay A×B÷2 and
+          trifectas A×B×C÷4, exact order required. Every ticket is capped by the max
+          payout per race shown on the card. Wagering closes at post time — once the
+          race is off, it's off.</p>
+        </S>
+        <S t="Casino">
+          <p>Table games play by the book: single-deck blackjack with dealer standing on
+          all 17s, European roulette, punto banco baccarat, full-pay Jacks or Better.
+          Slot paytables are printed on every machine. All results are final when the
+          round settles.</p>
+        </S>
+        <S t="The fine print">
+          <p>Credits are virtual with no cash value; they cannot be purchased, transferred,
+          or redeemed. Limits, credit, and account standing are set by your agent — talk to
+          them, not the house. Obvious errors (bad lines, wrong prices) may be voided even
+          after acceptance. Management's grading decisions are final.</p>
+        </S>
+      </div>
+    </Card>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">{children}</div>;
+}
+
+// ------------------------------------------------------------------- horses --
+function Horses({ onBalance }: { onBalance: (b: string) => void }) {
+  const [card, setCard] = useState<Awaited<ReturnType<typeof api.rbCard>> | null>(null);
+  const [trackKey, setTrackKey] = useState("");
+  const [raceId, setRaceId] = useState(0);
+  const [kind, setKind] = useState<"straight" | "exacta" | "trifecta">("straight");
+  const [pool, setPool] = useState<"win" | "place" | "show">("win");
+  const [picks, setPicks] = useState<number[]>([]);
+  const [stake, setStake] = useState("10");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mine, setMine] = useState<Awaited<ReturnType<typeof api.rbMyBets>> | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  const load = () => {
+    api.rbCard().then((c) => {
+      setCard(c);
+      setTrackKey((cur) => cur || c.tracks[0]?.key || "");
+    }).catch((e) => setErr(e.message));
+    api.rbMyBets().then(setMine).catch(() => {});
+  };
+  useEffect(load, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+
+  const track = card?.tracks.find((t) => t.key === trackKey);
+  const openRaces = track?.races.filter((r) => r.status === "scheduled") ?? [];
+  const race = track?.races.find((r) => r.id === raceId) ?? openRaces[0];
+  useEffect(() => {
+    if (race && raceId !== race.id) setRaceId(race.id);
+    setPicks([]);
+  }, [trackKey, race?.id]);
+
+  const needed = kind === "straight" ? 1 : kind === "exacta" ? 2 : 3;
+  const tap = (pn: number) => {
+    setPicks((p) => p.includes(pn) ? p.filter((x) => x !== pn)
+      : p.length >= needed ? [...p.slice(0, needed - 1), pn] : [...p, pn]);
+  };
+
+  async function place() {
+    if (!race || picks.length !== needed) return;
+    setBusy(true); setErr(""); setMsg("");
+    try {
+      const k = kind === "straight" ? pool : kind;
+      const r = await api.rbPlace(race.id, k, picks, stake);
+      setMsg(`Ticket #${r.bet_id} in — ${k} on #${r.picks} · to return ${money(r.potential)}`);
+      onBalance(r.balance);
+      setPicks([]);
+      api.rbMyBets().then(setMine).catch(() => {});
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  if (!card) return <Card><p className="py-8 text-center text-sm text-slate-500">
+    {err || "loading…"}</p></Card>;
+
+  const postIn = race ? new Date(race.post_time).getTime() - now : 0;
+  const mins = Math.max(0, Math.floor(postIn / 60000));
+  const secs = Math.max(0, Math.floor((postIn % 60000) / 1000));
+  const SADDLE = ["bg-red-600 text-white", "bg-slate-100 text-black", "bg-blue-600 text-white",
+    "bg-yellow-400 text-black", "bg-green-700 text-white", "bg-black text-yellow-300",
+    "bg-orange-500 text-black", "bg-pink-400 text-black", "bg-teal-500 text-black"];
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {card.tracks.map((t) => (
+          <button key={t.key} onClick={() => { setTrackKey(t.key); setRaceId(0); }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              t.key === trackKey ? "btn-gold text-base-900"
+                : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+            🐎 {t.name}
+          </button>
+        ))}
+      </div>
+
+      {race ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={race.id} onChange={(e) => { setRaceId(Number(e.target.value)); setPicks([]); }}
+              className="rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-sm font-bold text-slate-100 outline-none">
+              {openRaces.map((r) => (
+                <option key={r.id} value={r.id}>Race {r.number}</option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-400">
+              Post: {new Date(race.post_time).toLocaleTimeString(undefined,
+                { hour: "numeric", minute: "2-digit" })}
+            </span>
+            {postIn > 0 && postIn < 15 * 60000 && (
+              <span className="rounded-lg bg-red-500/20 px-2.5 py-1 font-mono text-xs font-bold text-red-300">
+                {mins}m {String(secs).padStart(2, "0")}s
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {(["straight", "exacta", "trifecta"] as const).map((k) => (
+              <button key={k} onClick={() => { setKind(k); setPicks([]); }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize ${
+                  kind === k ? "bg-sky-600 text-white" : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+                {k}
+              </button>
+            ))}
+            {kind === "straight" && (["win", "place", "show"] as const).map((pl) => (
+              <button key={pl} onClick={() => setPool(pl)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize ${
+                  pool === pl ? "btn-gold text-base-900" : "bg-base-800 text-slate-400 hover:bg-base-700"}`}>
+                {pl}
+              </button>
+            ))}
+          </div>
+
+          <p className="px-1 text-[10px] leading-relaxed text-slate-500">
+            {kind === "straight"
+              ? "Win: first. Place: first or second. Show: in the top three. Tap a runner to pick."
+              : kind === "exacta"
+                ? "Pick the first two finishers IN ORDER — tap them in finishing order."
+                : "Pick the first three finishers IN ORDER."}
+          </p>
+
+          <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+            <div className="grid grid-cols-[44px_1fr_70px_50px] items-center gap-2 border-b border-base-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <span>PN</span><span>Runner / Jockey</span>
+              <span className="text-right">ML</span><span className="text-right">WT</span>
+            </div>
+            {race.runners.map((r) => {
+              const idx = picks.indexOf(r.pn);
+              return (
+                <button key={r.pn} onClick={() => tap(r.pn)}
+                  className={`grid w-full grid-cols-[44px_1fr_70px_50px] items-center gap-2 border-b border-base-700/60 px-3 py-2 text-left last:border-0 ${
+                    idx >= 0 ? "bg-gold/15" : "hover:bg-base-700/40"}`}>
+                  <span className="flex items-center gap-1">
+                    <span className={`grid h-6 w-6 place-items-center rounded font-mono text-xs font-bold ${
+                      SADDLE[(r.pn - 1) % SADDLE.length]}`}>{r.pn}</span>
+                    {idx >= 0 && kind !== "straight" && (
+                      <span className="font-mono text-[10px] font-bold text-gold">{idx + 1}º</span>
+                    )}
+                    {idx >= 0 && kind === "straight" && (
+                      <span className="text-gold">✓</span>
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-slate-100">{r.name}</span>
+                    <span className="block truncate text-[10px] text-slate-500">{r.jockey}</span>
+                  </span>
+                  <span className="text-right font-mono text-sm font-bold text-slate-200">{r.ml}</span>
+                  <span className="text-right font-mono text-[10px] text-slate-500">{r.weight}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={stake} inputMode="decimal"
+              onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
+              className="w-24 rounded-xl border border-white/5 bg-base-800 shadow-card px-3 py-2.5 font-mono text-sm text-slate-100 outline-none" />
+            {["5", "10", "25", "50"].map((v) => (
+              <button key={v} onClick={() => setStake(v)}
+                className="rounded-lg border border-white/5 bg-base-800 shadow-card px-2.5 py-2 text-xs text-slate-300 hover:bg-base-700">{v}</button>
+            ))}
+            <button onClick={place} disabled={busy || picks.length !== needed}
+              className="ml-auto rounded-xl bg-accent px-5 py-2.5 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-40">
+              {busy ? "…" : `Add to bet slip (${picks.length}/${needed})`}
+            </button>
+          </div>
+          {msg && <div className="rounded-xl bg-accent/10 px-4 py-2.5 text-xs text-accent">{msg}</div>}
+          {err && <div className="rounded-xl bg-red-950 px-4 py-2.5 text-xs text-red-300">{err}</div>}
+        </>
+      ) : (
+        <Card><p className="py-8 text-center text-sm text-slate-500">
+          No more races today at this track — check another track or come back tomorrow.
+        </p></Card>
+      )}
+
+      {/* -------- limits card, like the bottom of the reference page -------- */}
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4 text-xs">
+        <h4 className="mb-2 font-bold text-slate-200">Straight Limits</h4>
+        <div className="grid max-w-xs grid-cols-3 gap-1 text-slate-400">
+          <span /><span className="font-semibold text-slate-300">Min</span>
+          <span className="font-semibold text-slate-300">Max</span>
+          {(["Win", "Place", "Show"] as const).map((k) => (
+            <FragmentRow key={k} k={k} min={card.limits.min} max={card.limits.max} />
+          ))}
+        </div>
+        <p className="mt-2 text-slate-400">
+          Max limit payout by race:{" "}
+          <span className="font-mono font-bold text-slate-200">
+            {money(card.limits.max_payout_per_race)}
+          </span>
+        </p>
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{card.note}</p>
+      </div>
+
+      {mine && mine.length > 0 && (
+        <div className="space-y-1.5">
+          <h4 className="px-1 text-xs font-bold text-slate-200">My race tickets</h4>
+          {mine.slice(0, 12).map((b) => (
+            <div key={b.bet_id} className="flex items-baseline justify-between gap-2 rounded-xl border border-white/5 bg-base-800 shadow-card px-4 py-2.5 text-xs">
+              <span className="min-w-0">
+                <span className="block truncate text-slate-200">
+                  {b.track} R{b.race} · {b.kind} · {b.picks.map((x) => `#${x.pn} ${x.name}`).join(", ")}
+                </span>
+                <span className="block text-[10px] text-slate-500">
+                  {money(b.stake)} to return {money(b.potential)}
+                  {b.result && ` · finish ${b.result.split("-").slice(0, 3).join("-")}`}
+                </span>
+              </span>
+              <span className={`font-bold uppercase ${
+                b.status === "won" ? "text-accent" : b.status === "lost" ? "text-red-400" : "text-amber-300"}`}>
+                {b.status}
+                {b.payout && Number(b.payout) > 0 && <span className="ml-1 font-mono">+{money(b.payout)}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FragmentRow({ k, min, max }: { k: string; min: string; max: string }) {
+  return (
+    <>
+      <span className="font-semibold text-slate-300">{k}</span>
+      <span className="font-mono">{Number(min).toFixed(2)}</span>
+      <span className="font-mono">{Number(max).toFixed(2)}</span>
+    </>
+  );
+}
+
