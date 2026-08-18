@@ -1375,11 +1375,11 @@ function AceyDucey({ onBalance, onPlayed }: { onBalance: (b: string) => void; on
         )}
       </>}>
       <div className="flex items-center justify-center gap-3 rounded-xl border border-indigo-500/25 bg-gradient-to-b from-[#141040] via-[#0a071d] to-black py-4">
-        {hand ? <PlayingCard c={hand.cards[0]} /> : <PlayingCard c="??" />}
+        {hand ? <DealtCard key={hand.cards[0]} c={hand.cards[0]} i={0} /> : <PlayingCard c="??" />}
         <span className="grid h-16 w-11 place-items-center rounded-lg border border-dashed border-gold/40 text-xl text-gold/70">
-          {third ? <PlayingCard c={third} /> : "?"}
+          {third ? <DealtCard key={third} c={third} i={0} /> : "?"}
         </span>
-        {hand ? <PlayingCard c={hand.cards[1]} /> : <PlayingCard c="??" />}
+        {hand ? <DealtCard key={hand.cards[1]} c={hand.cards[1]} i={1} /> : <PlayingCard c="??" />}
       </div>
     </QuickShell>
   );
@@ -1455,11 +1455,11 @@ function WarGame({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPl
       </>}>
       <div className="grid grid-cols-2 place-items-center gap-2 rounded-xl border border-red-500/25 bg-gradient-to-b from-[#2e0a12] via-[#170408] to-black py-4">
         <div className="text-center">
-          <div className="flex gap-1">{cards && <PlayingCard c={cards.p} />}{warCards && <PlayingCard c={warCards.p} />}{!cards && <PlayingCard c="??" />}</div>
+          <div className="flex gap-1">{cards && <DealtCard key={cards.p} c={cards.p} i={0} />}{warCards && <DealtCard key={warCards.p} c={warCards.p} i={2} />}{!cards && <PlayingCard c="??" />}</div>
           <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">You</div>
         </div>
         <div className="text-center">
-          <div className="flex gap-1">{cards && <PlayingCard c={cards.d} />}{warCards && <PlayingCard c={warCards.d} />}{!cards && <PlayingCard c="??" />}</div>
+          <div className="flex gap-1">{cards && <DealtCard key={cards.d} c={cards.d} i={1} />}{warCards && <DealtCard key={warCards.d} c={warCards.d} i={3} />}{!cards && <PlayingCard c="??" />}</div>
           <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">House</div>
         </div>
       </div>
@@ -1617,7 +1617,7 @@ function RideTheBus({ onBalance, onPlayed }: { onBalance: (b: string) => void; o
       </>}>
       <div className="rounded-xl border border-yellow-500/25 bg-gradient-to-b from-[#2e2404] via-[#171202] to-black p-3">
         <div className="flex items-center justify-center gap-2">
-          {(st?.cards ?? []).map((c, i) => <PlayingCard key={i} c={c} />)}
+          <DealtHand cards={st?.cards ?? []} />
           {!done && st && st.cards.length < 4 && <PlayingCard c="??" />}
           {(!st || (done && !st.cards.length)) && <PlayingCard c="??" />}
         </div>
@@ -1676,7 +1676,7 @@ function SuitLink({ onBalance, onPlayed }: { onBalance: (b: string) => void; onP
         <button onClick={play} disabled={busy} className={GOLD_BTN}>Drop</button>
       </>}>
       <div className="flex items-center justify-center gap-3 rounded-xl border border-pink-500/25 bg-gradient-to-b from-[#2e0a1e] via-[#17040e] to-black py-4">
-        {cards ? cards.map((c, i) => <span key={i} className="reel-pop"><PlayingCard c={c} /></span>)
+        {cards ? <DealtHand cards={cards} />
           : <><PlayingCard c="??" /><PlayingCard c="??" /></>}
         <span className="text-3xl text-gold">{S[suit]}</span>
       </div>
@@ -1696,10 +1696,8 @@ function HighCardFlush({ onBalance, onPlayed }: { onBalance: (b: string) => void
     setErr(""); setBusy(true); setMsg(null); setHand(null);
     try {
       const r = await api.hcfDeal(stake);
-      for (let i = 1; i <= 5; i++) {
-        setHand(r.hand.slice(0, i));
-        await new Promise((res) => setTimeout(res, 180));
-      }
+      setHand(r.hand);
+      await new Promise((res) => setTimeout(res, 950));
       onBalance(r.balance); onPlayed();
       setMsg(Number(r.payout) > 0
         ? `${r.flush_len}-card flush — ${r.multiplier}x paid ${money(r.payout)}`
@@ -1715,7 +1713,7 @@ function HighCardFlush({ onBalance, onPlayed }: { onBalance: (b: string) => void
         <button onClick={deal} disabled={busy} className={GOLD_BTN}>Deal</button>
       </>}>
       <div className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-gradient-to-b from-[#04291c] via-[#02150e] to-black py-4">
-        {hand ? hand.map((c, i) => <span key={i} className="reel-pop"><PlayingCard c={c} /></span>)
+        {hand ? <DealtHand cards={hand} />
           : Array.from({ length: 5 }, (_, i) => <PlayingCard key={i} c="??" />)}
       </div>
     </QuickShell>
@@ -2037,13 +2035,11 @@ function DragonTiger({ onBalance, onPlayed }: {
 
   async function deal() {
     setErr(""); setBusy(true); setMsg(null);
-    setCards({ d: "??", t: "??" });
+    setCards(null);
     try {
       const r = await api.dtDeal(stake, bet);
-      await new Promise((res) => setTimeout(res, 350));
-      setCards({ d: r.dragon, t: "??" });
-      await new Promise((res) => setTimeout(res, 350));
       setCards({ d: r.dragon, t: r.tiger });
+      await new Promise((res) => setTimeout(res, 750));
       onBalance(r.balance); onPlayed();
       const won = Number(r.payout) > Number(stake);
       setMsg(r.result === "tie"
@@ -2067,7 +2063,7 @@ function DragonTiger({ onBalance, onPlayed }: {
               side === "d" ? "text-red-400" : "text-orange-400"}`}>
               {side === "d" ? "🐉 Dragon" : "🐯 Tiger"}
             </span>
-            {cards ? <PlayingCard c={side === "d" ? cards.d : cards.t} />
+            {cards ? <DealtCard key={side === "d" ? cards.d : cards.t} c={side === "d" ? cards.d : cards.t} i={side === "d" ? 0 : 1} />
               : <div className="h-16 w-11 rounded-lg border border-dashed border-white/15" />}
           </div>
         ))}
@@ -2161,7 +2157,7 @@ function HiLo({ onBalance, onPlayed }: {
           {(st?.history ?? []).slice(-6, -1).map((c, i) => (
             <span key={i} className="opacity-40 scale-90"><PlayingCard c={c} /></span>
           ))}
-          {st ? <span className="reel-pop"><PlayingCard c={st.card} /></span>
+          {st ? <DealtCard key={st.card + st.history.length} c={st.card} i={0} />
             : <PlayingCard c="??" />}
         </div>
         {live && (
@@ -3218,7 +3214,7 @@ function VideoPoker({ onBalance, onPlayed }: {
                 onClick={() => setHolds(holds.map((h, j) => (j === i ? !h : h)))}
                 className="flex flex-col items-center gap-1">
                 <span className={holds[i] && open ? "rounded-lg ring-2 ring-gold" : ""}>
-                  <PlayingCard c={c} />
+                  <DealtCard key={`${i}-${c}`} c={c} i={i} />
                 </span>
                 <span className={`text-[9px] font-bold uppercase tracking-wide ${
                   holds[i] && open ? "text-gold" : "text-slate-600"}`}>
@@ -3294,11 +3290,11 @@ function Baccarat({ onBalance, onPlayed }: {
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
 
-  const side = (label: string, cards: string[], total: number, winner: boolean, tone: string) => (
+  const side = (label: string, cards: string[], total: number, winner: boolean, tone: string, off = 0) => (
     <div className={`flex-1 rounded-lg border p-3 text-center ${
       winner ? "border-accent/50 bg-accent/5" : "border-white/10 bg-base-900/50"}`}>
       <div className={`mb-2 text-[10px] font-bold uppercase tracking-widest ${tone}`}>{label}</div>
-      <div className="flex justify-center gap-1.5">{cards.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+      <div className="flex justify-center gap-1.5"><DealtHand cards={cards} offset={off} /></div>
       <div className="mt-2 font-mono text-lg font-black text-slate-100">{total}</div>
     </div>
   );
@@ -3318,7 +3314,7 @@ function Baccarat({ onBalance, onPlayed }: {
         <>
           <div className="mb-2 flex gap-2">
             {side("Player", d.player, d.player_total, d.outcome === "player", "text-sky-300")}
-            {side("Banker", d.banker, d.banker_total, d.outcome === "banker", "text-red-300")}
+            {side("Banker", d.banker, d.banker_total, d.outcome === "banker", "text-red-300", 3)}
           </div>
           <div className={`mb-3 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
             Number(d.payout) > Number(d.multiplier === "1" ? "0" : "0") && Number(d.payout) > 0
@@ -3839,6 +3835,43 @@ function PlayingCard({ c }: { c: string }) {
   );
 }
 
+/* a card dealt off the shoe: it flies in, then flips face-up. Keyed by
+   position+face, so a new card animates and the table doesn't re-deal. */
+function DealtCard({ c, i }: { c: string; i: number }) {
+  return (
+    <span key={`${i}-${c}`} className="deal-fly" style={{ animationDelay: `${i * 150}ms` }}>
+      <span className="deal-flip" style={{ animationDelay: `${i * 150 + 170}ms` }}>
+        <span className="deal-front"><PlayingCard c={c} /></span>
+        <span className="deal-back"><PlayingCard c="??" /></span>
+      </span>
+    </span>
+  );
+}
+
+function DealtHand({ cards, offset = 0 }: { cards: string[]; offset?: number }) {
+  return (
+    <>
+      {cards.map((c, i) => <DealtCard key={`${i}-${c}`} c={c} i={i + offset} />)}
+    </>
+  );
+}
+
+/* the dealing shoe sitting on the felt */
+function Shoe({ busy }: { busy: boolean }) {
+  return (
+    <div className={`pointer-events-none absolute right-2 top-2 ${busy ? "shoe-shuffle" : ""}`}>
+      <div className="relative h-12 w-9">
+        <span className="absolute left-1 top-1 h-11 w-8 rounded-md bg-gradient-to-br from-base-600 to-base-700 ring-1 ring-white/10" />
+        <span className="absolute left-0.5 top-0.5 h-11 w-8 rounded-md bg-gradient-to-br from-base-600 to-base-700 ring-1 ring-white/10" />
+        <span className="absolute left-0 top-0 grid h-11 w-8 place-items-center rounded-md bg-gradient-to-br from-[#7c2d12] to-[#431407] text-[10px] text-gold/70 ring-1 ring-gold/30"
+          style={{ backgroundImage: "repeating-linear-gradient(45deg, rgba(240,180,41,.08) 0 3px, transparent 3px 6px)" }}>
+          🂠
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Blackjack({ onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
@@ -3878,18 +3911,20 @@ function Blackjack({ onBalance, onPlayed }: {
       </p>
 
       {hand && (
-        <div className="mb-3 space-y-3 rounded-lg bg-base-900/70 p-4">
-          <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
+        <div className="relative mb-3 space-y-3 overflow-hidden rounded-xl border border-emerald-800/50 bg-[radial-gradient(circle_at_50%_0,#14532d_0%,#0c3320_45%,#07210f_100%)] p-4 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)]">
+          <Shoe busy={busy} />
+          <div className="pointer-events-none absolute inset-x-8 top-16 h-24 rounded-[50%] border border-gold/15" />
+          <div className="relative">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-emerald-200/60">
               Dealer {hand.dealer_total !== null && `— ${hand.dealer_total}`}
             </div>
-            <div className="flex gap-1.5">{hand.dealer.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+            <div className="flex gap-1.5"><DealtHand cards={hand.dealer} /></div>
           </div>
-          <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
+          <div className="relative">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-emerald-200/60">
               You — {hand.player_total}{hand.doubled ? " · doubled" : ""}
             </div>
-            <div className="flex gap-1.5">{hand.player.map((c, i) => <PlayingCard key={i} c={c} />)}</div>
+            <div className="flex gap-1.5"><DealtHand cards={hand.player} offset={2} /></div>
           </div>
           {done && hand.outcome && (
             <div className={`text-sm font-bold ${OUTCOME[hand.outcome]?.[1] ?? ""}`}>
