@@ -443,6 +443,20 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
                 : null;
             })()}
             {game === "crash" && <Crash onBalance={onBalance} onPlayed={load} />}
+            {game === "keno" && (() => {
+              const def = lobby?.games.find((g) => g.key === "keno");
+              return def?.keno ? <Keno def={def.keno} onBalance={onBalance} onPlayed={load} /> : null;
+            })()}
+            {game === "limbo" && (() => {
+              const def = lobby?.games.find((g) => g.key === "limbo");
+              return def?.limbo ? <Limbo def={def.limbo} onBalance={onBalance} onPlayed={load} /> : null;
+            })()}
+            {game === "towers" && (() => {
+              const def = lobby?.games.find((g) => g.key === "towers");
+              return def?.towers ? <Towers def={def.towers} onBalance={onBalance} onPlayed={load} /> : null;
+            })()}
+            {game === "dragontiger" && <DragonTiger onBalance={onBalance} onPlayed={load} />}
+            {game === "hilo" && <HiLo onBalance={onBalance} onPlayed={load} />}
             {game === "tumble" && (() => {
               const def = lobby?.games.find((g) => g.key === "tumble");
               return def?.tumble
@@ -830,6 +844,492 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         Every coin pays its printed value instantly. Land {def.trigger}+ coins to lock
         them and start {def.respins} respins — any new coin resets the counter.
         Fill the grid for the {def.grand}× Grand on top.
+      </p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- keno ----
+function Keno({ def, onBalance, onPlayed }: {
+  def: import("../api").KenoDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [picks, setPicks] = useState<Set<number>>(new Set());
+  const [drawn, setDrawn] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  const toggle = (n: number) => {
+    if (busy) return;
+    setDrawn(new Set()); setMsg(null);
+    setPicks((p) => {
+      const c = new Set(p);
+      if (c.has(n)) c.delete(n);
+      else if (c.size < def.max_picks) c.add(n);
+      return c;
+    });
+  };
+
+  async function play() {
+    if (!picks.size) { setErr("pick some numbers first"); return; }
+    setErr(""); setBusy(true); setMsg(null); setDrawn(new Set());
+    try {
+      const r = await api.kenoPlay(stake, [...picks]);
+      // balls drop one at a time
+      for (const b of r.drawn) {
+        await new Promise((res) => setTimeout(res, 160));
+        setDrawn((d) => new Set([...d, b]));
+      }
+      onBalance(r.balance); onPlayed();
+      setMsg(Number(r.win) > 0
+        ? `${r.hits} catches — ${r.multiplier}x paid ${money(r.win)}`
+        : `${r.hits} catch${r.hits === 1 ? "" : "es"} — no pay`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const table = def.tables[String(picks.size)] ?? {};
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🎱 Keno</h3>
+        <span className="font-mono text-[10px] text-slate-500">{picks.size}/{def.max_picks} picked</span>
+      </div>
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">{msg}</div>
+      )}
+      <div className="rounded-xl border border-violet-500/30 bg-gradient-to-b from-[#160b2e] via-[#0c0619] to-black p-3">
+        <div className="grid grid-cols-8 gap-1">
+          {Array.from({ length: def.pool }, (_, i) => i + 1).map((n) => {
+            const p = picks.has(n), d = drawn.has(n);
+            return (
+              <button key={n} onClick={() => toggle(n)}
+                className={`aspect-square rounded-md font-mono text-xs font-bold transition ${
+                  p && d ? "reel-pop btn-gold text-base-900 shadow-gold"
+                  : d ? "bg-violet-500/40 text-white"
+                  : p ? "border border-gold/70 bg-gold/15 text-gold"
+                  : "border border-white/10 bg-base-900/70 text-slate-400 hover:border-gold/40"}`}>
+                {n}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {picks.size > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {Object.entries(table).map(([h, m]) => (
+            <span key={h} className="rounded bg-base-900/70 px-2 py-1 font-mono text-[10px] text-slate-300">
+              {h} hits → <span className="font-bold text-gold">{m}x</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <button onClick={() => { setPicks(new Set()); setDrawn(new Set()); setMsg(null); }}
+          disabled={busy}
+          className="rounded-lg border border-white/10 bg-base-900 px-3 py-2.5 text-xs font-bold text-slate-300 hover:bg-base-700 disabled:opacity-50">
+          Clear
+        </button>
+        <button onClick={play} disabled={busy || !picks.size}
+          className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+          {busy ? "…" : "Draw"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ limbo ----
+function Limbo({ def, onBalance, onPlayed }: {
+  def: import("../api").LimboDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [target, setTarget] = useState("2.00");
+  const [result, setResult] = useState<{ n: string; win: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [rolling, setRolling] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function play() {
+    setErr(""); setBusy(true); setRolling(true); setResult(null);
+    try {
+      const r = await api.limboPlay(stake, target);
+      // count-up flourish
+      const final = Number(r.result);
+      const frames = 14;
+      for (let i = 1; i <= frames; i++) {
+        await new Promise((res) => setTimeout(res, 45));
+        const v = 1 + (Math.min(final, 30) - 1) * (i / frames) ** 2;
+        setResult({ n: v.toFixed(2), win: false });
+      }
+      setRolling(false);
+      setResult({ n: r.result, win: r.win });
+      onBalance(r.balance); onPlayed();
+    } catch (e: any) { setRolling(false); setErr(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const win = result && !rolling && result.win;
+  const lose = result && !rolling && !result.win;
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🎯 Limbo</h3>
+        <span className="font-mono text-[10px] text-slate-500">up to {Number(def.max).toLocaleString()}x</span>
+      </div>
+      <div className="grid h-40 place-items-center rounded-xl border border-cyan-500/25 bg-gradient-to-b from-[#03222e] via-[#021017] to-black">
+        <span className={`font-mono text-5xl font-black tabular-nums ${
+          win ? "text-accent drop-shadow-[0_0_18px_rgba(74,222,128,0.5)]"
+          : lose ? "text-red-400" : "text-slate-200"}`}>
+          {result ? `${result.n}×` : "—"}
+        </span>
+      </div>
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Target ×</span>
+          <input value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy}
+            className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <span className="pb-2 font-mono text-[10px] text-slate-500">
+          pays {Number(target) > 0 ? Number(target).toFixed(2) : "—"}x
+        </span>
+        <button onClick={play} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+          {busy ? "…" : "Bet"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        Name any multiplier from {def.min}x to {Number(def.max).toLocaleString()}x.
+        Beat it and you're paid your number.
+      </p>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------- towers ----
+function Towers({ def, onBalance, onPlayed }: {
+  def: import("../api").TowersDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [level, setLevel] = useState("medium");
+  const [st, setSt] = useState<import("../api").TowersState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.towersActive().then((r) => { if (r.active) { setSt(r.active); setLevel(r.active.level); } }).catch(() => {});
+  }, []);
+
+  const live = st && st.status === "open";
+  const tiles = live ? st.tiles : def.levels[level].tiles;
+
+  async function start() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const r = await api.towersStart(stake, level);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function pick(tile: number) {
+    if (!st || busy) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.towersPick(st.round_id, tile);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      if (r.outcome === "bust") setMsg("💥 Trap — the stake is gone");
+      else if (r.outcome === "topped") setMsg(`🏆 TOP FLOOR — paid ${money(r.payout!)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cashout() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.towersCashout(st.round_id);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout!)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const mults = def.levels[live ? st!.level : level].mults;
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🗼 Towers</h3>
+        {live && <span className="font-mono text-xs font-bold text-gold">{st!.multiplier}x locked</span>}
+      </div>
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">{msg}</div>
+      )}
+      <div className="rounded-xl border border-emerald-500/25 bg-gradient-to-b from-[#04261b] via-[#02140e] to-black p-3">
+        <div className="space-y-1.5">
+          {Array.from({ length: def.rows }, (_, i) => def.rows - 1 - i).map((row) => {
+            const active = live && st!.row === row;
+            const done = live ? row < st!.row : false;
+            const pickedTile = st?.picked[row];
+            const trap = st?.traps?.[row];
+            return (
+              <div key={row} className="flex items-center gap-1.5">
+                <span className={`w-14 text-right font-mono text-[10px] ${
+                  active ? "font-bold text-gold" : done ? "text-accent" : "text-slate-600"}`}>
+                  {mults[row]}x
+                </span>
+                <div className="grid flex-1 gap-1.5" style={{ gridTemplateColumns: `repeat(${tiles}, 1fr)` }}>
+                  {Array.from({ length: tiles }, (_, t) => {
+                    const isPicked = pickedTile === t && (done || st?.status === "settled");
+                    const isTrap = trap !== undefined && trap === t;
+                    const revealed = st?.traps !== undefined;
+                    return (
+                      <button key={t} onClick={() => active && pick(t)}
+                        disabled={!active || busy}
+                        className={`h-8 rounded-md border text-xs font-bold transition ${
+                          revealed && isTrap ? "border-red-500/60 bg-red-500/20 text-red-300"
+                          : isPicked ? "border-accent/60 bg-accent/15 text-accent"
+                          : active ? "border-gold/50 bg-gold/10 text-gold hover:bg-gold/25"
+                          : done ? "border-white/5 bg-base-900/60 text-slate-700"
+                          : "border-white/5 bg-base-900/60 text-slate-700"}`}>
+                        {revealed && isTrap ? "💀" : isPicked ? "✓" : active ? "?" : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-3 flex items-end gap-2">
+        {!live ? (
+          <>
+            <label className="text-xs">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+              <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+                className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+            </label>
+            <label className="text-xs">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Difficulty</span>
+              <select value={level} onChange={(e) => setLevel(e.target.value)} disabled={busy}
+                className="rounded-lg bg-base-700 px-2 py-2 text-sm text-slate-100 outline-none">
+                {Object.entries(def.levels).map(([k, v]) => (
+                  <option key={k} value={k}>{k} · {v.tiles} tiles</option>
+                ))}
+              </select>
+            </label>
+            <button onClick={start} disabled={busy}
+              className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+              Climb
+            </button>
+          </>
+        ) : (
+          <button onClick={cashout} disabled={busy || st!.row === 0}
+            className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            Cash out {st!.multiplier}x
+          </button>
+        )}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------- dragon tiger ----
+function DragonTiger({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [bet, setBet] = useState("dragon");
+  const [cards, setCards] = useState<{ d: string; t: string } | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function deal() {
+    setErr(""); setBusy(true); setMsg(null);
+    setCards({ d: "??", t: "??" });
+    try {
+      const r = await api.dtDeal(stake, bet);
+      await new Promise((res) => setTimeout(res, 350));
+      setCards({ d: r.dragon, t: "??" });
+      await new Promise((res) => setTimeout(res, 350));
+      setCards({ d: r.dragon, t: r.tiger });
+      onBalance(r.balance); onPlayed();
+      const won = Number(r.payout) > Number(stake);
+      setMsg(r.result === "tie"
+        ? (bet === "tie" ? `🀄 TIE — paid ${money(r.payout)}` : `Tie — half back, ${money(r.payout)}`)
+        : won ? `${r.result.toUpperCase()} wins — paid ${money(r.payout)}`
+        : `${r.result.toUpperCase()} wins — no good`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <h3 className="mb-2 text-sm font-bold text-slate-100">🐯 Dragon Tiger</h3>
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">{msg}</div>
+      )}
+      <div className="grid grid-cols-2 gap-3 rounded-xl border border-orange-500/25 bg-gradient-to-b from-[#2e1004] via-[#170802] to-black p-4">
+        {(["d", "t"] as const).map((side) => (
+          <div key={side} className="grid place-items-center gap-2">
+            <span className={`text-[10px] font-black uppercase tracking-widest ${
+              side === "d" ? "text-red-400" : "text-orange-400"}`}>
+              {side === "d" ? "🐉 Dragon" : "🐯 Tiger"}
+            </span>
+            {cards ? <PlayingCard c={side === "d" ? cards.d : cards.t} />
+              : <div className="h-16 w-11 rounded-lg border border-dashed border-white/15" />}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-1.5 text-xs font-bold">
+        {[["dragon", "Dragon 1:1"], ["tie", "Tie 11:1"], ["tiger", "Tiger 1:1"]].map(([k, label]) => (
+          <button key={k} onClick={() => setBet(k)} disabled={busy}
+            className={`rounded-lg border py-2 transition ${
+              bet === k ? "border-gold bg-gold/15 text-gold" : "border-white/10 bg-base-900 text-slate-400 hover:border-gold/40"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        <button onClick={deal} disabled={busy}
+          className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+          Deal
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        One card each, high card wins — ace low, king high. A rank tie pays the
+        Tie bet 11:1 and returns half of Dragon/Tiger bets.
+      </p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ hi-lo ----
+function HiLo({ onBalance, onPlayed }: {
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [st, setSt] = useState<import("../api").HiLoState | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.hiloActive().then((r) => { if (r.active) setSt(r.active); }).catch(() => {});
+  }, []);
+
+  const live = st && st.status === "open";
+
+  async function start() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const r = await api.hiloStart(stake);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function guess(g: "higher" | "lower") {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.hiloGuess(st.round_id, g);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      if (r.outcome === "bust") setMsg(`💔 ${r.card} — busted`);
+      else setMsg(`✓ ${r.card} — riding ${r.multiplier}x`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cashout() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.hiloCashout(st.round_id);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout!)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🂱 Hi-Lo</h3>
+        {live && <span className="font-mono text-xs font-bold text-gold">{st!.multiplier}x riding</span>}
+      </div>
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">{msg}</div>
+      )}
+      <div className="rounded-xl border border-sky-500/25 bg-gradient-to-b from-[#04202e] via-[#021018] to-black p-4">
+        <div className="flex items-center justify-center gap-2">
+          {(st?.history ?? []).slice(-6, -1).map((c, i) => (
+            <span key={i} className="opacity-40 scale-90"><PlayingCard c={c} /></span>
+          ))}
+          {st ? <span className="reel-pop"><PlayingCard c={st.card} /></span>
+            : <PlayingCard c="??" />}
+        </div>
+        {live && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button onClick={() => guess("higher")}
+              disabled={busy || Number(st!.higher_mult) <= 0}
+              className="rounded-lg border border-accent/50 bg-accent/10 py-2.5 text-sm font-black text-accent hover:bg-accent/20 disabled:opacity-30">
+              ▲ Higher · {st!.higher_mult}x
+            </button>
+            <button onClick={() => guess("lower")}
+              disabled={busy || Number(st!.lower_mult) <= 0}
+              className="rounded-lg border border-red-400/50 bg-red-500/10 py-2.5 text-sm font-black text-red-300 hover:bg-red-500/20 disabled:opacity-30">
+              ▼ Lower · {st!.lower_mult}x
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 flex items-end gap-2">
+        {!live ? (
+          <>
+            <label className="text-xs">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+              <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+                className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+            </label>
+            <button onClick={start} disabled={busy}
+              className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+              Deal
+            </button>
+          </>
+        ) : (
+          <button onClick={cashout} disabled={busy || st!.multiplier === "1"}
+            className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            Cash out {st!.multiplier}x
+          </button>
+        )}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        Call the next card higher or lower — ace low, king high, a tie loses.
+        Every right call multiplies at true odds; cash out whenever you like.
       </p>
     </div>
   );

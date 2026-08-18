@@ -229,8 +229,49 @@ async def lobby():
                       + " · ".join(
                           f"{k} pays up to {max(m for _, m in v)}x"
                           for k, v in E.WHEEL.items())},
-        ],
+        ] + _arcade_entries(settings.min_bet_credits, mx),
     }
+
+
+def _arcade_entries(mn: str, mx: str) -> list[dict]:
+    from . import arcade as AR
+    return [
+        {"key": "keno", "name": "Keno", "icon": "🎱", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": f"Pick up to {AR.KENO_MAX_PICKS} of {AR.KENO_POOL} numbers; "
+                  f"{AR.KENO_DRAWN} balls drop. The more you catch, the "
+                  f"bigger the pay — top catches hit {AR.KENO_CAP}x.",
+         "keno": {"pool": AR.KENO_POOL, "drawn": AR.KENO_DRAWN,
+                  "max_picks": AR.KENO_MAX_PICKS,
+                  "tables": {str(p): {str(h): str(m) for h, m
+                                      in AR.keno_paytable(p).items()}
+                             for p in range(1, AR.KENO_MAX_PICKS + 1)}}},
+        {"key": "limbo", "name": "Limbo", "icon": "🎯", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": "Name your multiplier — any number from "
+                  f"{AR.LIMBO_MIN}x to {AR.LIMBO_MAX}x. If the result beats "
+                  "it, you're paid your number.",
+         "limbo": {"min": str(AR.LIMBO_MIN), "max": str(AR.LIMBO_MAX)}},
+        {"key": "towers", "name": "Towers", "icon": "🗼", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": f"Climb {AR.TOWERS_ROWS} floors — one trap per floor. Every "
+                  "clear floor raises the cash-out; hit the trap and it's gone.",
+         "towers": {"rows": AR.TOWERS_ROWS,
+                    "levels": {k: {"tiles": t,
+                                   "mults": [str(AR.towers_mult(k, r))
+                                             for r in range(1, AR.TOWERS_ROWS + 1)]}
+                               for k, t in AR.TOWERS_LEVELS.items()}}},
+        {"key": "dragontiger", "name": "Dragon Tiger", "icon": "🐯",
+         "category": "table", "min": mn, "max": mx,
+         "rules": "One card each. High card wins, even money; a rank tie pays "
+                  f"the Tie {AR.DT_TIE_PAYS}:1 and gives half back on the "
+                  "main bets. Ace low, king high."},
+        {"key": "hilo", "name": "Hi-Lo", "icon": "🂱", "category": "table",
+         "min": mn, "max": mx,
+         "rules": "Call the next card higher or lower — every right call "
+                  "multiplies at true odds. A tie loses, so press or cash out "
+                  "whenever you like."},
+    ]
 
 
 # ------------------------------------------------------------------- dice ----
@@ -1328,6 +1369,406 @@ async def vslot_active(user: User = Depends(current_user),
                        "free_spins_left": st["spins_left"],
                        "bonus_total": str(from_micros(st["total_win"])),
                        "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# ------------------------------------------------------------------- keno ----
+class KenoReq(BaseModel):
+    stake: str
+    picks: list[int]
+    idempotency_key: str | None = None
+
+
+@router.post("/keno/play")
+async def keno_play(req: KenoReq, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    _casino_gate(user)
+    picks = sorted(set(req.picks))
+    if not 1 <= len(picks) <= AR.KENO_MAX_PICKS:
+        raise HTTPException(400, f"pick 1-{AR.KENO_MAX_PICKS} numbers")
+    if any(not 1 <= p <= AR.KENO_POOL for p in picks):
+        raise HTTPException(400, f"numbers are 1-{AR.KENO_POOL}")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    drawn = AR.keno_draw(pair.server_seed, pair.client_seed, nonce)
+    hits = len(set(picks) & set(drawn))
+    mult = AR.keno_paytable(len(picks)).get(hits, Decimal(0))
+    win = payout_micros(stake_m, mult)
+
+    rnd = CasinoRound(game="keno", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="settled",
+                      outcome="win" if win > 0 else "lose", payout_micros=win,
+                      detail=json.dumps({"picks": picks, "drawn": drawn,
+                                         "hits": hits}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "keno_play", rnd.id,
+                                  f"kn:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "keno_play", rnd.id,
+               f"kn:{rnd.id}:settle:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "drawn": drawn, "picks": picks, "hits": hits,
+            "multiplier": str(mult), "win": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+# ------------------------------------------------------------------ limbo ----
+class LimboReq(BaseModel):
+    stake: str
+    target: str
+    idempotency_key: str | None = None
+
+
+@router.post("/limbo/play")
+async def limbo_play(req: LimboReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    _casino_gate(user)
+    try:
+        target = Decimal(req.target)
+    except Exception:
+        raise HTTPException(400, "bad target")
+    if not AR.LIMBO_MIN <= target <= AR.LIMBO_MAX:
+        raise HTTPException(400, f"target is {AR.LIMBO_MIN}-{AR.LIMBO_MAX}")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    out = AR.limbo_play(pair.server_seed, pair.client_seed, nonce, target)
+    win = payout_micros(stake_m, target) if out.win else 0
+
+    rnd = CasinoRound(game="limbo", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="settled",
+                      outcome="win" if out.win else "lose", payout_micros=win,
+                      detail=json.dumps({"target": str(target),
+                                         "result": str(out.result)}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "limbo_play", rnd.id,
+                                  f"lb:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "limbo_play", rnd.id,
+               f"lb:{rnd.id}:settle:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "target": str(target),
+            "result": str(out.result), "win": out.win,
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+# ----------------------------------------------------------------- towers ----
+class TowersStart(BaseModel):
+    stake: str
+    level: str
+    idempotency_key: str | None = None
+
+
+def _towers_public(rnd, st, done: bool) -> dict:
+    from . import arcade as AR
+    row = len(st["picked"])
+    out = {"round_id": rnd.id, "status": rnd.status, "outcome": rnd.outcome,
+           "level": st["level"], "row": row, "rows": AR.TOWERS_ROWS,
+           "tiles": AR.TOWERS_LEVELS[st["level"]],
+           "picked": st["picked"],
+           "stake": str(from_micros(rnd.stake_micros)),
+           "multiplier": str(AR.towers_mult(st["level"], row)),
+           "next_multiplier": (str(AR.towers_mult(st["level"], row + 1))
+                               if row < AR.TOWERS_ROWS else None),
+           "payout": (str(from_micros(rnd.payout_micros))
+                      if rnd.payout_micros is not None else None)}
+    if done:
+        out["traps"] = st["traps"]
+    return out
+
+
+@router.post("/towers/start")
+async def towers_start(req: TowersStart, user: User = Depends(betting_user),
+                       session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    _casino_gate(user)
+    if await _open_round(session, user.id, "towers"):
+        raise HTTPException(409, "finish your open tower first")
+    if req.level not in AR.TOWERS_LEVELS:
+        raise HTTPException(400, "level is easy, medium or hard")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    traps = AR.towers_traps(pair.server_seed, pair.client_seed, nonce, req.level)
+    st = {"level": req.level, "traps": traps, "picked": []}
+
+    rnd = CasinoRound(game="towers", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, "towers_round", rnd.id,
+                              f"tw:{rnd.id}:place:{key}")
+    out = _towers_public(rnd, st, False)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+class TowersPick(BaseModel):
+    tile: int
+
+
+@router.post("/towers/{round_id}/pick")
+async def towers_pick(round_id: int, req: TowersPick,
+                      user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "towers":
+        raise HTTPException(404, "no such tower")
+    if rnd.status != "open":
+        raise HTTPException(409, "that tower is finished")
+    st = json.loads(rnd.detail)
+    tiles = AR.TOWERS_LEVELS[st["level"]]
+    if not 0 <= req.tile < tiles:
+        raise HTTPException(400, f"tile is 0-{tiles - 1}")
+    row = len(st["picked"])
+
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    if req.tile == st["traps"][row]:
+        st["picked"].append(req.tile)
+        rnd.status = "settled"; rnd.outcome = "bust"; rnd.payout_micros = 0
+        rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+    else:
+        st["picked"].append(req.tile)
+        rnd.detail = json.dumps(st)
+        if len(st["picked"]) == AR.TOWERS_ROWS:      # topped out: auto-pay
+            mult = AR.towers_mult(st["level"], AR.TOWERS_ROWS)
+            rnd.payout_micros = payout_micros(rnd.stake_micros, mult)
+            rnd.status = "settled"; rnd.outcome = "topped"
+            rnd.settled_at = datetime.now(timezone.utc)
+            await _pay(session, house, wallet, rnd.payout_micros,
+                       "towers_round", rnd.id, f"tw:{rnd.id}:settle")
+    out = _towers_public(rnd, st, rnd.status == "settled")
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.post("/towers/{round_id}/cashout")
+async def towers_cashout(round_id: int, user: User = Depends(betting_user),
+                         session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "towers":
+        raise HTTPException(404, "no such tower")
+    if rnd.status != "open":
+        raise HTTPException(409, "that tower is finished")
+    st = json.loads(rnd.detail)
+    if not st["picked"]:
+        raise HTTPException(409, "clear at least one row before cashing out")
+    mult = AR.towers_mult(st["level"], len(st["picked"]))
+    rnd.payout_micros = payout_micros(rnd.stake_micros, mult)
+    rnd.status = "settled"; rnd.outcome = "cashout"
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, rnd.payout_micros, "towers_round",
+               rnd.id, f"tw:{rnd.id}:settle")
+    out = _towers_public(rnd, st, True)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.get("/towers/active")
+async def towers_active(user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    rnd = await _open_round(session, user.id, "towers")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _towers_public(rnd, json.loads(rnd.detail), False)}
+
+
+# ----------------------------------------------------------- dragon tiger ----
+class DTReq(BaseModel):
+    stake: str
+    bet: str                                  # dragon | tiger | tie
+    idempotency_key: str | None = None
+
+
+@router.post("/dt/deal")
+async def dt_deal(req: DTReq, user: User = Depends(betting_user),
+                  session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    _casino_gate(user)
+    if req.bet not in ("dragon", "tiger", "tie"):
+        raise HTTPException(400, "bet is dragon, tiger or tie")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    dragon, tiger = AR.dt_deal(pair.server_seed, pair.client_seed, nonce)
+    ret = AR.dt_settle(req.bet, dragon, tiger)
+    win = payout_micros(stake_m, ret)
+    dr, tr = AR.card_rank(dragon), AR.card_rank(tiger)
+    outcome = "tie" if dr == tr else ("dragon" if dr > tr else "tiger")
+
+    rnd = CasinoRound(game="dragontiger", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="settled",
+                      outcome="win" if win > stake_m else
+                              ("push_half" if win > 0 else "lose"),
+                      payout_micros=win,
+                      detail=json.dumps({"bet": req.bet, "dragon": dragon,
+                                         "tiger": tiger, "result": outcome}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "dt_deal", rnd.id,
+                                  f"dt2:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "dt_deal", rnd.id,
+               f"dt2:{rnd.id}:settle:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "dragon": dragon, "tiger": tiger,
+            "result": outcome, "bet": req.bet,
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+# ------------------------------------------------------------------ hi-lo ----
+class HiLoStart(BaseModel):
+    stake: str
+    idempotency_key: str | None = None
+
+
+def _hilo_public(rnd, st) -> dict:
+    from . import arcade as AR
+    r = AR.card_rank(st["card"])
+    return {"round_id": rnd.id, "status": rnd.status, "outcome": rnd.outcome,
+            "card": st["card"], "history": st["history"],
+            "stake": str(from_micros(rnd.stake_micros)),
+            "multiplier": str(Decimal(st["mult"])),
+            "higher_mult": str(AR.hilo_mult(r, "higher")),
+            "lower_mult": str(AR.hilo_mult(r, "lower")),
+            "payout": (str(from_micros(rnd.payout_micros))
+                       if rnd.payout_micros is not None else None)}
+
+
+@router.post("/hilo/start")
+async def hilo_start(req: HiLoStart, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    _casino_gate(user)
+    if await _open_round(session, user.id, "hilo"):
+        raise HTTPException(409, "finish your open hand first")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    card = AR.hilo_card(pair.server_seed, pair.client_seed, nonce, 0)
+    st = {"card": card, "step": 0, "mult": "1", "history": [card]}
+
+    rnd = CasinoRound(game="hilo", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, "hilo_round", rnd.id,
+                              f"hl:{rnd.id}:place:{key}")
+    out = _hilo_public(rnd, st)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+class HiLoGuess(BaseModel):
+    guess: str                                # higher | lower
+
+
+@router.post("/hilo/{round_id}/guess")
+async def hilo_guess(round_id: int, req: HiLoGuess,
+                     user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import arcade as AR
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "hilo":
+        raise HTTPException(404, "no such hand")
+    if rnd.status != "open":
+        raise HTTPException(409, "that hand is finished")
+    if req.guess not in ("higher", "lower"):
+        raise HTTPException(400, "guess is higher or lower")
+    st = json.loads(rnd.detail)
+    r = AR.card_rank(st["card"])
+    step_mult = AR.hilo_mult(r, req.guess)
+    if step_mult <= 0:
+        raise HTTPException(400, "that call isn't offered on this card")
+
+    pair = await seeds.active_pair(session, user.id)
+    nxt = AR.hilo_card(pair.server_seed, pair.client_seed, rnd.nonce,
+                       st["step"] + 1)
+    nr = AR.card_rank(nxt)
+    correct = nr > r if req.guess == "higher" else nr < r
+    st["step"] += 1
+    st["card"] = nxt
+    st["history"].append(nxt)
+
+    if correct:
+        st["mult"] = str((Decimal(st["mult"]) * step_mult)
+                         .quantize(Decimal("0.0001"), rounding="ROUND_DOWN"))
+        rnd.detail = json.dumps(st)
+    else:
+        rnd.status = "settled"; rnd.outcome = "bust"; rnd.payout_micros = 0
+        rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+    out = _hilo_public(rnd, st)
+    out["correct"] = correct
+    wallet = await ledger.wallet_for(session, user.id)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.post("/hilo/{round_id}/cashout")
+async def hilo_cashout(round_id: int, user: User = Depends(betting_user),
+                       session: AsyncSession = Depends(get_session)):
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "hilo":
+        raise HTTPException(404, "no such hand")
+    if rnd.status != "open":
+        raise HTTPException(409, "that hand is finished")
+    st = json.loads(rnd.detail)
+    if st["step"] == 0:
+        raise HTTPException(409, "make at least one call before cashing out")
+    rnd.payout_micros = payout_micros(rnd.stake_micros, Decimal(st["mult"]))
+    rnd.status = "settled"; rnd.outcome = "cashout"
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, rnd.payout_micros, "hilo_round",
+               rnd.id, f"hl:{rnd.id}:settle")
+    out = _hilo_public(rnd, st)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.get("/hilo/active")
+async def hilo_active(user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    rnd = await _open_round(session, user.id, "hilo")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _hilo_public(rnd, json.loads(rnd.detail))}
 
 
 # ------------------------------------------------------------------ mines ----

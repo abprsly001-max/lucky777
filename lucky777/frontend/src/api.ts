@@ -169,6 +169,32 @@ export interface TumbleSpin {
   cost?: string;
 }
 
+export interface KenoDef {
+  pool: number; drawn: number; max_picks: number;
+  tables: Record<string, Record<string, string>>;
+}
+
+export interface LimboDef { min: string; max: string }
+
+export interface TowersDef {
+  rows: number;
+  levels: Record<string, { tiles: number; mults: string[] }>;
+}
+
+export interface TowersState {
+  round_id: number; status: string; outcome: string | null;
+  level: string; row: number; rows: number; tiles: number; picked: number[];
+  stake: string; multiplier: string; next_multiplier: string | null;
+  payout: string | null; traps?: number[]; balance?: string;
+}
+
+export interface HiLoState {
+  round_id: number; status: string; outcome: string | null;
+  card: string; history: string[]; stake: string; multiplier: string;
+  higher_mult: string; lower_mult: string; payout: string | null;
+  correct?: boolean; balance?: string;
+}
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -234,7 +260,8 @@ export const api = {
                        min: string; max: string; edge: string; rules: string;
                        slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef;
                        holdspin?: HoldSpinDef; dragon?: DragonDef;
-                       tumble?: TumbleDef }[] }>(
+                       tumble?: TumbleDef; keno?: KenoDef; limbo?: LimboDef;
+                       towers?: TowersDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -302,6 +329,38 @@ export const api = {
       "/api/casino/holdspin/respin", { method: "POST" }),
   holdspinActive: () =>
     request<{ active: HoldSpinState | null }>("/api/casino/holdspin/active"),
+  kenoPlay: (stake: string, picks: number[]) =>
+    request<{ round_id: number; drawn: number[]; picks: number[]; hits: number;
+              multiplier: string; win: string; balance: string }>(
+      "/api/casino/keno/play", { method: "POST", body: JSON.stringify({ stake, picks }) }),
+  limboPlay: (stake: string, target: string) =>
+    request<{ round_id: number; target: string; result: string; win: boolean;
+              payout: string; balance: string }>(
+      "/api/casino/limbo/play", { method: "POST", body: JSON.stringify({ stake, target }) }),
+  towersStart: (stake: string, level: string) =>
+    request<TowersState>("/api/casino/towers/start",
+      { method: "POST", body: JSON.stringify({ stake, level }) }),
+  towersPick: (roundId: number, tile: number) =>
+    request<TowersState>(`/api/casino/towers/${roundId}/pick`,
+      { method: "POST", body: JSON.stringify({ tile }) }),
+  towersCashout: (roundId: number) =>
+    request<TowersState>(`/api/casino/towers/${roundId}/cashout`, { method: "POST" }),
+  towersActive: () =>
+    request<{ active: TowersState | null }>("/api/casino/towers/active"),
+  dtDeal: (stake: string, bet: string) =>
+    request<{ round_id: number; dragon: string; tiger: string; result: string;
+              bet: string; payout: string; balance: string }>(
+      "/api/casino/dt/deal", { method: "POST", body: JSON.stringify({ stake, bet }) }),
+  hiloStart: (stake: string) =>
+    request<HiLoState>("/api/casino/hilo/start",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  hiloGuess: (roundId: number, guess: string) =>
+    request<HiLoState>(`/api/casino/hilo/${roundId}/guess`,
+      { method: "POST", body: JSON.stringify({ guess }) }),
+  hiloCashout: (roundId: number) =>
+    request<HiLoState>(`/api/casino/hilo/${roundId}/cashout`, { method: "POST" }),
+  hiloActive: () =>
+    request<{ active: HiLoState | null }>("/api/casino/hilo/active"),
   tumbleSpin: (stake: string) =>
     request<TumbleSpin>("/api/casino/tumble/spin",
       { method: "POST", body: JSON.stringify({ stake }) }),

@@ -401,7 +401,93 @@ function TumbleArt() {
   );
 }
 
+function KenoArt() {
+  const ball = (x: number, y: number, n: string, r = 15) => (
+    <g key={n}>
+      <circle cx={x} cy={y} r={r} fill="url(#kn-gold)" stroke="#7c3aed" strokeWidth="1.5" />
+      <text x={x} y={y + 4} fontSize="12" fontWeight="900" textAnchor="middle"
+        fill="#2e1065" fontFamily="Arial Black, sans-serif">{n}</text>
+    </g>
+  );
+  return (
+    <Frame id="kn" from="#2a1060" to="#0e0524">
+      {ball(70, 50, "7")}
+      {ball(160, 42, "23", 18)}
+      {ball(250, 52, "44")}
+      {ball(110, 92, "12")}
+      {ball(205, 90, "69")}
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#kn-gold)" fontFamily="Arial Black, sans-serif">KENO</text>
+    </Frame>
+  );
+}
+
+function LimboArt() {
+  return (
+    <Frame id="lm" from="#053142" to="#02141d">
+      <text x="160" y="72" fontSize="40" fontWeight="900" textAnchor="middle"
+        fill="url(#lm-gold)" fontFamily="Arial Black, sans-serif">27.4×</text>
+      <path d="M 40 100 Q 120 96 180 70 T 290 22" stroke="#22d3ee"
+        strokeWidth="2.5" fill="none" opacity="0.7" />
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#lm-gold)" fontFamily="Arial Black, sans-serif">NAME YOUR NUMBER</text>
+    </Frame>
+  );
+}
+
+function TowersArt() {
+  const row = (y: number, lit: number) => (
+    <g key={y}>
+      {[0, 1, 2].map((i) => (
+        <rect key={i} x={110 + i * 36} y={y} width="30" height="16" rx="3"
+          fill={i === lit ? "url(#tw-gold)" : "rgba(255,255,255,0.08)"}
+          stroke={i === lit ? "#a16207" : "rgba(255,255,255,0.15)"} />
+      ))}
+    </g>
+  );
+  return (
+    <Frame id="tw" from="#04331f" to="#021710">
+      {row(24, -1)}{row(44, 1)}{row(64, 0)}{row(84, 2)}
+      <text x="60" y="60" fontSize="30" textAnchor="middle">🗼</text>
+      <text x="260" y="60" fontSize="24" textAnchor="middle">💀</text>
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#tw-gold)" fontFamily="Arial Black, sans-serif">CLIMB & CASH OUT</text>
+    </Frame>
+  );
+}
+
+function DTArt() {
+  return (
+    <Frame id="dt" from="#3a1204" to="#170701">
+      <text x="80" y="70" fontSize="44" textAnchor="middle">🐉</text>
+      <text x="240" y="70" fontSize="44" textAnchor="middle">🐯</text>
+      <text x="160" y="72" fontSize="20" fontWeight="900" textAnchor="middle"
+        fill="url(#dt-gold)" fontFamily="Arial Black, sans-serif">VS</text>
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#dt-gold)" fontFamily="Arial Black, sans-serif">HIGH CARD WINS</text>
+    </Frame>
+  );
+}
+
+function HiLoArt() {
+  return (
+    <Frame id="hl" from="#052c42" to="#02121d">
+      <rect x="130" y="26" width="58" height="76" rx="7" fill="#f8fafc" stroke="#cbd5e1" />
+      <text x="159" y="76" fontSize="30" fontWeight="900" textAnchor="middle" fill="#dc2626">J♥</text>
+      <text x="95" y="72" fontSize="30" fontWeight="900" textAnchor="middle" fill="#4ade80">▲</text>
+      <text x="225" y="72" fontSize="30" fontWeight="900" textAnchor="middle" fill="#f87171">▼</text>
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#hl-gold)" fontFamily="Arial Black, sans-serif">HIGHER OR LOWER</text>
+    </Frame>
+  );
+}
+
 export default function GameArt({ k }: { k: string }) {
+  if (k === "keno") return <KenoArt />;
+  if (k === "limbo") return <LimboArt />;
+  if (k === "towers") return <TowersArt />;
+  if (k === "dragontiger") return <DTArt />;
+  if (k === "hilo") return <HiLoArt />;
   if (k === "tumble") return <TumbleArt />;
   if (k === "dragon") return <DragonArt />;
   if (k === "holdspin") return <PiggyArt />;
