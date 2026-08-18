@@ -1487,8 +1487,20 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
   const [visible, setVisible] = useState(80);
   useEffect(() => { setVisible(80); }, [sport]);
 
+  // the board reads like a real book: marquee pro leagues first, the rest of
+  // the pros next, college ball after — then soonest kickoff inside each tier
+  const leagueRank = (key: string): number => {
+    const marquee = ["baseball_mlb", "americanfootball_nfl", "basketball_nba",
+                     "icehockey_nhl", "basketball_wnba", "soccer_epl",
+                     "soccer_uefa_champs_league", "mma_mixed_martial_arts",
+                     "boxing_boxing"];
+    if (marquee.some((t) => key.startsWith(t))) return 0;
+    if (key.includes("ncaa")) return 2;
+    return 1;
+  };
   const upcoming = events.filter((e) => e.status === "scheduled")
-    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    .sort((a, b) => leagueRank(a.competition_key) - leagueRank(b.competition_key)
+      || a.starts_at.localeCompare(b.starts_at));
 
   const sports = useMemo(() => {
     const seen = new Map<string, { name: string; icon: string; n: number }>();
