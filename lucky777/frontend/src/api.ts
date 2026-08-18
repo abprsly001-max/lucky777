@@ -1,8 +1,10 @@
-const TOKEN_KEY = "lucky777_token";
+// The token lives in memory ONLY -- a refresh, a closed tab, or a crash all
+// end the session and demand the password again. Book rules.
+let _token: string | null = null;
 
-export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+export const getToken = () => _token;
+export const setToken = (t: string) => { _token = t; };
+export const clearToken = () => { _token = null; };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
