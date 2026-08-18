@@ -1675,8 +1675,21 @@ function ConfirmWagers({ picks, setPicks, onBack, onPlaced }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [placed, setPlaced] = useState<string[]>([]);
+  const [betType, setBetType] = useState<"straight" | "parlay">("straight");
+  const [pAmount, setPAmount] = useState("100");
+  const [pMode, setPMode] = useState<"risk" | "win">("risk");
 
   const list = [...picks.values()];
+  // combined price if the whole slip rides as one parlay
+  const parlayDec = list.reduce((a, p) => a * Number(p.sel.odds), 1);
+  const parlayNums = (() => {
+    const amt = Number(pAmount) || 0;
+    if (pMode === "risk") return { risk: amt, win: amt * (parlayDec - 1) };
+    return { risk: parlayDec > 1 ? amt / (parlayDec - 1) : 0, win: amt };
+  })();
+  const parlayAmerican = parlayDec >= 2
+    ? `+${Math.round((parlayDec - 1) * 100)}`
+    : `-${Math.round(100 / (parlayDec - 1))}`;
   const upd = (id: number, patch: Partial<ClassicPick>) => {
     const n = new Map(picks);
     n.set(id, { ...n.get(id)!, ...patch });
@@ -1707,18 +1720,36 @@ function ConfirmWagers({ picks, setPicks, onBack, onPlaced }: {
     }
     const done: string[] = [];
     let lastBalance = "";
-    for (const p of list) {
-      const { risk } = nums(p);
-      if (risk <= 0) { setErr(`${p.label}: enter an amount.`); setBusy(false); return; }
+    if (betType === "parlay") {
+      // one ticket, every pick a leg, one price
+      if (list.length < 2) { setErr("A parlay needs at least 2 picks."); setBusy(false); return; }
+      if (parlayNums.risk <= 0) { setErr("Enter your parlay amount."); setBusy(false); return; }
       try {
-        const r = await api.sbPlace([{ selection_id: p.sel.id, odds: p.sel.odds }],
-          risk.toFixed(2), true, "auto");
+        const r = await api.sbPlace(
+          list.map((p) => ({ selection_id: p.sel.id, odds: p.sel.odds })),
+          parlayNums.risk.toFixed(2), true, "parlay");
         lastBalance = r.balance;
-        done.push(`✓ ${p.label} — risking ${risk.toFixed(2)}`);
-        remove(p.sel.id);
+        done.push(`✓ ${list.length}-leg parlay (${parlayAmerican}) — risking ${parlayNums.risk.toFixed(2)} to win ${Number(r.potential).toFixed(2)}`);
+        setPicks(new Map());
       } catch (e: any) {
-        setErr(`${p.label}: ${e.message}`);
-        break;
+        setErr(e.message);
+        setBusy(false);
+        return;
+      }
+    } else {
+      for (const p of list) {
+        const { risk } = nums(p);
+        if (risk <= 0) { setErr(`${p.label}: enter an amount.`); setBusy(false); return; }
+        try {
+          const r = await api.sbPlace([{ selection_id: p.sel.id, odds: p.sel.odds }],
+            risk.toFixed(2), true, "auto");
+          lastBalance = r.balance;
+          done.push(`✓ ${p.label} — risking ${risk.toFixed(2)}`);
+          remove(p.sel.id);
+        } catch (e: any) {
+          setErr(`${p.label}: ${e.message}`);
+          break;
+        }
       }
     }
     setPlaced(done);
@@ -1749,10 +1780,65 @@ function ConfirmWagers({ picks, setPicks, onBack, onPlaced }: {
     <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-100 shadow-card">
       <div className="flex items-baseline justify-between px-4 pt-3 text-slate-900">
         <span className="text-[15px] font-bold">Please confirm your wagers</span>
-        <span className="flex gap-8 text-sm font-semibold"><span>Risk</span><span>Win</span></span>
+        {betType === "straight" && (
+          <span className="flex gap-8 text-sm font-semibold"><span>Risk</span><span>Win</span></span>
+        )}
       </div>
 
-      {list.map((p) => {
+      {/* how the slip rides: each pick on its own, or all of it as one parlay */}
+      <div className="mx-2 mt-2 grid grid-cols-2 overflow-hidden rounded-md border border-slate-300 text-sm font-bold">
+        <button onClick={() => setBetType("straight")}
+          className={`py-2 ${betType === "straight" ? "bg-slate-800 text-white" : "bg-white text-slate-700 hover:bg-slate-200"}`}>
+          Straight bets
+        </button>
+        <button onClick={() => setBetType("parlay")} disabled={list.length < 2}
+          className={`py-2 ${betType === "parlay" ? "bg-green-700 text-white" : "bg-white text-slate-700 hover:bg-slate-200 disabled:opacity-40"}`}>
+          Parlay {list.length >= 2 ? `(${list.length} legs · ${parlayAmerican})` : "(pick 2+)"}
+        </button>
+      </div>
+
+      {betType === "parlay" && (
+        <div className="mx-2 mt-2 rounded border border-green-600 bg-white">
+          <div className="border-b border-slate-200 bg-green-50 px-3 py-2 text-sm font-bold text-green-800">
+            {list.length}-team parlay · pays {parlayAmerican} ({parlayDec.toFixed(2)}x)
+          </div>
+          {list.map((p) => (
+            <div key={p.sel.id} className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-slate-900">{p.label}</div>
+                <div className="truncate text-[11px] text-slate-500">{p.ev.away} @ {p.ev.home}</div>
+              </div>
+              <div className="ml-2 flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-bold text-slate-700">{p.sel.american}</span>
+                <button onClick={() => remove(p.sel.id)}
+                  className="rounded bg-slate-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-red-700">✕</button>
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+            {(["risk", "win"] as const).map((mode) => (
+              <label key={mode} className="flex cursor-pointer items-center gap-1.5">
+                <input type="radio" checked={pMode === mode} onChange={() => setPMode(mode)}
+                  className="h-4 w-4 accent-green-700" />
+                <span className="text-sm font-bold capitalize text-slate-800">{mode}</span>
+                <input value={pMode === mode ? pAmount
+                    : (mode === "risk" ? parlayNums.risk.toFixed(0) : parlayNums.win.toFixed(0))}
+                  onChange={(e) => { setPMode(mode); setPAmount(e.target.value); }}
+                  inputMode="decimal"
+                  className="w-24 rounded border border-slate-400 bg-white px-2 py-1 text-center font-mono text-sm text-slate-900" />
+              </label>
+            ))}
+            <span className="ml-auto font-mono text-sm font-bold text-green-700">
+              ${parlayNums.risk.toFixed(2)} wins ${parlayNums.win.toFixed(2)}
+            </span>
+          </div>
+          <p className="px-3 pb-2 text-[11px] text-slate-500">
+            Every leg must win. Picks from the same game can't ride together in a parlay.
+          </p>
+        </div>
+      )}
+
+      {betType === "straight" && list.map((p) => {
         const n = nums(p);
         return (
           <div key={p.sel.id} className="mx-2 mt-2 rounded border border-slate-300 bg-white">
@@ -1793,10 +1879,19 @@ function ConfirmWagers({ picks, setPicks, onBack, onPlaced }: {
       })}
 
       <div className="flex items-baseline justify-between px-4 pt-3 text-sm font-bold text-slate-900">
-        <span>{list.length} Total Wagers</span>
-        <span className="flex gap-6 font-mono">
-          <span>${totals.risk.toFixed(2)}</span><span>${totals.win.toFixed(2)}</span>
-        </span>
+        {betType === "straight" ? (
+          <>
+            <span>{list.length} Total Wagers</span>
+            <span className="flex gap-6 font-mono">
+              <span>${totals.risk.toFixed(2)}</span><span>${totals.win.toFixed(2)}</span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span>1 Parlay · {list.length} legs</span>
+            <span className="font-mono">${parlayNums.risk.toFixed(2)} → ${parlayNums.win.toFixed(2)}</span>
+          </>
+        )}
       </div>
 
       <div className="px-4 pb-4 pt-3">
