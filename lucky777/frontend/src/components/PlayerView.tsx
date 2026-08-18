@@ -621,15 +621,7 @@ function SlotGame({ def, onBalance, onPlayed }: {
   async function spin() {
     setErr(""); setLast(null); setSpinning(true);
     setLive([true, true, true]); setPopped([false, false, false]);
-    const ticks = [0, 1, 2].map((i) => window.setInterval(() => {
-      setReels((r) => {
-        const n = [...r];
-        n[i] = slot.symbols[Math.floor(Math.random() * slot.symbols.length)];
-        return n;
-      });
-    }, 65 + i * 12));
     const stopReel = (i: number, sym: string) => {
-      window.clearInterval(ticks[i]);
       setReels((r) => { const n = [...r]; n[i] = sym; return n; });
       setLive((l) => { const n = [...l] as typeof live; n[i] = false; return n; });
       setPopped((pp) => { const n = [...pp] as typeof popped; n[i] = true; return n; });
@@ -644,9 +636,8 @@ function SlotGame({ def, onBalance, onPlayed }: {
           onPlayed();
           setSpinning(false);
         }
-      }, 500 + i * 380));
+      }, 600 + i * 420));
     } catch (e: any) {
-      ticks.forEach((t) => window.clearInterval(t));
       setLive([false, false, false]);
       setErr(e.message);
       setSpinning(false);
@@ -670,18 +661,32 @@ function SlotGame({ def, onBalance, onPlayed }: {
                 spinning ? "animate-pulse bg-gold" : i % 2 ? "bg-gold/70" : "bg-gold/25"}`} />
             ))}
           </div>
-          <div className="mx-auto grid max-w-xs grid-cols-3 gap-2">
+          <div className="mx-auto grid max-w-xs grid-cols-3 gap-2 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
             {reels.map((sym, i) => (
               <div key={i}
                 className={`relative grid h-24 place-items-center overflow-hidden rounded-lg border bg-base-900 ${
                   last && last.win && !spinning
                     ? "border-accent/60 shadow-[0_0_18px_-4px_rgba(74,222,128,0.5)]"
                     : live[i] ? "border-gold/40" : "border-white/10"}`}>
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-black/50 to-transparent" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-black/50 to-transparent" />
-                <span className={live[i] ? "blur-[2px] opacity-80" : popped[i] ? "reel-pop" : ""}>
-                  <SlotSymbol sym={sym} />
-                </span>
+                {live[i] ? (
+                  <div className="vs-strip absolute inset-x-0 blur-[2px]">
+                    {Array.from({ length: 8 }, (_, j) =>
+                      slot.symbols[(i * 3 + j * 2 + 1) % slot.symbols.length])
+                      .concat(Array.from({ length: 8 }, (_, j) =>
+                        slot.symbols[(i * 3 + j * 2 + 1) % slot.symbols.length]))
+                      .map((s, j) => (
+                        <div key={j} className="grid h-24 place-items-center">
+                          <SlotSymbol sym={s} />
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <span className={popped[i] ? "vs-stop inline-block" : ""}>
+                    <SlotSymbol sym={sym} />
+                  </span>
+                )}
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-black/60 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-black/60 to-transparent" />
               </div>
             ))}
           </div>
@@ -2541,29 +2546,68 @@ function VSCell({ sym, hot, dim, tier }: {
 }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
   const inner = spec.cls === "slot-bar" ? (
-    <span className="rounded btn-gold px-1.5 py-0.5 font-sans text-[10px] font-black text-base-900">BAR</span>
+    <span className="rounded btn-gold px-1.5 py-0.5 font-sans text-[11px] font-black text-base-900">BAR</span>
   ) : sym === "wild" ? (
-    <span className="rounded-md btn-gold px-1 py-0.5 font-sans text-[10px] font-black tracking-tight text-base-900">WILD</span>
+    <span className="rounded-md bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1.5 py-1 font-sans text-[11px] font-black tracking-tight text-base-900 shadow-[0_2px_6px_rgba(0,0,0,0.5)] ring-1 ring-yellow-100/60">WILD</span>
   ) : spec.cls === "slot-gold" ? (
-    <span className="bg-gradient-to-b from-slate-200 to-slate-500 bg-clip-text text-xl font-black text-transparent">{spec.g}</span>
+    <span className="bg-gradient-to-b from-white via-slate-200 to-slate-500 bg-clip-text text-2xl font-black text-transparent drop-shadow-[0_2px_2px_rgba(0,0,0,0.6)] sm:text-3xl">{spec.g}</span>
   ) : (
-    <span className={sym === "scatter"
-      ? "text-2xl drop-shadow-[0_0_8px_rgba(240,180,41,0.9)]"
-      : tier <= 2 ? "text-2xl drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]" : "text-2xl"}>{spec.g}</span>
+    <span className={`drop-shadow-[0_3px_3px_rgba(0,0,0,0.55)] ${sym === "scatter"
+      ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(240,180,41,0.95))]"
+      : "text-2xl sm:text-3xl"}`}>{spec.g}</span>
   );
-  // rarity frames: wild/scatter glow gold, the theme highs get a rich ring,
-  // mids a cool one, card royals stay quiet
+  // symbol plates by rarity: premiums glow warm, mids cool, royals stay quiet
   const frame = sym === "wild" || sym === "scatter"
-    ? "border-gold/60 bg-gradient-to-b from-gold/15 to-base-900"
-    : tier <= 2 ? "border-amber-400/40 bg-gradient-to-b from-amber-500/10 to-base-900"
-    : tier <= 4 ? "border-sky-400/30 bg-gradient-to-b from-sky-500/10 to-base-900"
-    : "border-white/10 bg-base-900/90";
+    ? "border-gold/70 bg-[radial-gradient(circle_at_50%_28%,rgba(240,180,41,0.30),rgba(20,13,2,0.95)_78%)]"
+    : tier <= 2 ? "border-amber-400/45 bg-[radial-gradient(circle_at_50%_28%,rgba(245,158,11,0.22),rgba(15,10,3,0.95)_78%)]"
+    : tier <= 4 ? "border-sky-400/35 bg-[radial-gradient(circle_at_50%_28%,rgba(56,189,248,0.16),rgba(4,10,18,0.95)_78%)]"
+    : "border-white/10 bg-[radial-gradient(circle_at_50%_28%,rgba(148,163,184,0.10),rgba(8,10,16,0.95)_78%)]";
   return (
-    <div className={`grid aspect-square place-items-center rounded-md border transition ${
-      hot ? "border-gold bg-gold/25 shadow-gold"
-        : dim ? `${frame} opacity-35`
+    <div className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg border transition ${
+      hot ? "vs-hot border-gold bg-gold/25"
+        : dim ? `${frame} opacity-30`
         : frame}`}>
+      {/* glass gloss across the top of the plate */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46%] rounded-t-lg bg-gradient-to-b from-white/12 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-black/35 to-transparent" />
       {inner}
+    </div>
+  );
+}
+
+/* one physical reel: a spinning strip behind a 3-row window, then the
+   staggered slam-stop with overshoot — the Hacksaw feel */
+function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }: {
+  reel: number; col: string[]; spinning: boolean; justStopped: boolean;
+  symbols: string[]; hotCells: Set<string>; hotLine: number | null;
+}) {
+  // a fixed pseudo-random strip per reel so the blur reads as real symbols
+  const strip = Array.from({ length: 9 }, (_, j) =>
+    symbols[(reel * 5 + j * 3 + 1) % symbols.length]);
+  return (
+    <div className="relative overflow-hidden rounded-lg">
+      {spinning ? (
+        <div className="relative" style={{ aspectRatio: "1 / 3.18" }}>
+          <div className="vs-strip absolute inset-x-0 blur-[2px]">
+            {[...strip, ...strip].map((s, j) => (
+              <div key={j} className="mb-1.5 w-full">
+                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false} />
+              </div>
+            ))}
+          </div>
+          {/* window shading: the curve of the reel drum */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1/4 bg-gradient-to-b from-black/60 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/4 bg-gradient-to-t from-black/60 to-transparent" />
+        </div>
+      ) : (
+        <div className={`grid gap-1.5 ${justStopped ? "vs-stop" : ""}`}>
+          {col.map((sym, row) => (
+            <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
+              hot={hotCells.has(`${reel}-${row}`)}
+              dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2577,6 +2621,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   const [grid, setGrid] = useState<string[][]>(
     Array.from({ length: 5 }, (_, i) => [0, 1, 2].map((r) => vs.symbols[(i + r + 2) % vs.symbols.length])));
   const [live, setLive] = useState<boolean[]>([false, false, false, false, false]);
+  const [stopped, setStopped] = useState<boolean[]>([false, false, false, false, false]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [wins, setWins] = useState<{ line: number; symbol: string; count: number; pay: string }[]>([]);
@@ -2622,25 +2667,19 @@ function VideoSlot({ def, onBalance, onPlayed }: {
 
   async function doSpin() {
     setErr(""); setBusy(true); setWins([]); setLastWin(null); setBanner(null);
+    setStopped([false, false, false, false, false]);
     setLive([true, true, true, true, true]);
-    const ticks = [0, 1, 2, 3, 4].map((i) => window.setInterval(() => {
-      setGrid((g) => {
-        const n = g.map((col) => [...col]);
-        n[i] = [0, 1, 2].map(() => vs.symbols[Math.floor(Math.random() * vs.symbols.length)]);
-        return n;
-      });
-    }, 60 + i * 8));
     try {
       const wasFree = freeLeft > 0;
       const r = await api.vslotSpin(vs.machine, stake);
       [0, 1, 2, 3, 4].forEach((i) => window.setTimeout(() => {
-        window.clearInterval(ticks[i]);
         setGrid((g) => {
           const n = g.map((col) => [...col]);
           n[i] = r.grid[i];
           return n;
         });
         setLive((l) => { const n = [...l]; n[i] = false; return n; });
+        setStopped((s) => { const n = [...s]; n[i] = true; return n; });
         if (i === 4) {
           setWins(r.line_wins);
           if (Number(r.win) > 0) setLastWin(r.win);
@@ -2655,9 +2694,8 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           onPlayed();
           setBusy(false);
         }
-      }, 420 + i * 260));
+      }, 550 + i * 300));
     } catch (e: any) {
-      ticks.forEach((t) => window.clearInterval(t));
       setLive([false, false, false, false, false]);
       setErr(e.message); setBusy(false);
     }
@@ -2696,16 +2734,15 @@ function VideoSlot({ def, onBalance, onPlayed }: {
         <div className={`rounded-xl border bg-gradient-to-b p-3 ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
-          <div className="grid grid-cols-5 gap-1.5">
-            {grid.map((col, reel) => (
-              <div key={reel} className={`grid gap-1.5 ${live[reel] ? "blur-[1.5px]" : ""}`}>
-                {col.map((sym, row) => (
-                  <VSCell key={row} sym={sym} tier={vs.symbols.indexOf(sym)}
-                    hot={hotCells.has(`${reel}-${row}`)}
-                    dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
-                ))}
-              </div>
-            ))}
+          {/* the reel bank, behind glass */}
+          <div className="relative rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
+            <div className="grid grid-cols-5 gap-1.5">
+              {grid.map((col, reel) => (
+                <VSReel key={reel} reel={reel} col={col} spinning={live[reel]}
+                  justStopped={stopped[reel]} symbols={vs.symbols}
+                  hotCells={hotCells} hotLine={hotLine} />
+              ))}
+            </div>
           </div>
           <div className="mt-2 flex h-6 items-center justify-center text-sm font-bold">
             {busy ? <span className="text-slate-500">…</span>
@@ -2775,6 +2812,45 @@ function VSCellMini({ sym }: { sym: string }) {
 const RL_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 type RlBet = { kind: string; pick?: number | null; stake: string; label: string };
 
+// pocket order around a real European wheel, clockwise from the zero
+const RL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,
+                  16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const RL_SEG = 360 / 37;
+
+function RouletteWheelSVG() {
+  const wedges = RL_ORDER.map((n, i) => {
+    const a0 = -RL_SEG / 2, a1 = RL_SEG / 2;
+    const rad = (d: number) => (d - 90) * (Math.PI / 180);
+    const x0 = 100 + 92 * Math.cos(rad(a0)), y0 = 100 + 92 * Math.sin(rad(a0));
+    const x1 = 100 + 92 * Math.cos(rad(a1)), y1 = 100 + 92 * Math.sin(rad(a1));
+    const fill = n === 0 ? "#15803d" : RL_RED.has(n) ? "#b91c1c" : "#111827";
+    return (
+      <g key={n} transform={`rotate(${i * RL_SEG} 100 100)`}>
+        <path d={`M100 100 L${x0} ${y0} A92 92 0 0 1 ${x1} ${y1} Z`}
+          fill={fill} stroke="#0b0e14" strokeWidth="0.6" />
+        <text x="100" y="17" fontSize="7.5" fontWeight="700" textAnchor="middle"
+          fill="#f8fafc" fontFamily="Arial, sans-serif">{n}</text>
+      </g>
+    );
+  });
+  return (
+    <svg viewBox="0 0 200 200" className="h-full w-full">
+      <circle cx="100" cy="100" r="99" fill="#3f2c10" />
+      <circle cx="100" cy="100" r="96" fill="none" stroke="#f0b429" strokeWidth="2.5" />
+      {wedges}
+      <circle cx="100" cy="100" r="58" fill="#1c1917" stroke="#f0b429" strokeWidth="1.5" />
+      <circle cx="100" cy="100" r="50" fill="#292524" />
+      {/* turret */}
+      <circle cx="100" cy="100" r="9" fill="#f0b429" />
+      <circle cx="100" cy="100" r="4" fill="#7c5806" />
+      {[0, 90, 180, 270].map((a) => (
+        <rect key={a} x="97.5" y="58" width="5" height="20" rx="2.5" fill="#f0b429"
+          transform={`rotate(${a} 100 100)`} />
+      ))}
+    </svg>
+  );
+}
+
 function Roulette({ onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
@@ -2783,6 +2859,10 @@ function Roulette({ onBalance, onPlayed }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [last, setLast] = useState<{ pocket: number; color: string; payout: string } | null>(null);
+  const [wheelRot, setWheelRot] = useState(0);
+  const [ballRot, setBallRot] = useState(0);
+  const [ballDropped, setBallDropped] = useState(false);
+  const [rolling, setRolling] = useState(false);
 
   const add = (kind: string, pick: number | null, label: string) => {
     setErr("");
@@ -2792,11 +2872,26 @@ function Roulette({ onBalance, onPlayed }: {
   const total = bets.reduce((a, b) => a + Number(b.stake), 0);
 
   async function spin() {
-    setErr(""); setBusy(true); setLast(null);
+    setErr(""); setBusy(true); setLast(null); setBallDropped(false);
     try {
       const r = await api.rouletteSpin(bets.map(({ kind, pick, stake }) => ({ kind, pick, stake })));
-      setLast(r); onBalance(r.balance); onPlayed(); setBets([]);
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      // the wheel turns clockwise, the ball whips the other way; both
+      // decelerate so the winning pocket meets the ball at 12 o'clock
+      const idx = RL_ORDER.indexOf(r.pocket);
+      const pocketAngle = idx * RL_SEG;
+      setRolling(true);
+      setWheelRot((w) => {
+        const settle = (360 - pocketAngle - ((w % 360) + 360) % 360 + 720) % 360;
+        return w + 4 * 360 + settle;
+      });
+      setBallRot((b) => b - (5 * 360 + ((b % 360) + 360) % 360));
+      window.setTimeout(() => {
+        setBallDropped(true);
+        setRolling(false);
+        setLast(r); onBalance(r.balance); onPlayed(); setBets([]);
+        setBusy(false);
+      }, 4100);
+    } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
   const numBtn = (n: number) => (
@@ -2818,8 +2913,36 @@ function Roulette({ onBalance, onPlayed }: {
     <div className="space-y-3">
       <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h3 className="text-sm font-bold text-slate-100">🎯 Roulette</h3>
+          <GameLogo k="roulette" />
           <span className="font-mono text-[10px] text-slate-500">European</span>
+        </div>
+
+        {/* the wheel */}
+        <div className="mb-3 grid place-items-center rounded-xl border border-gold/20 bg-[radial-gradient(circle_at_50%_35%,#1d3527,#07130b_75%)] py-4">
+          <div className="relative h-52 w-52 sm:h-60 sm:w-60">
+            <div className="h-full w-full drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]"
+              style={{ transform: `rotate(${wheelRot}deg)`,
+                       transition: rolling ? "transform 4s cubic-bezier(0.12, 0.68, 0.16, 1)" : "none" }}>
+              <RouletteWheelSVG />
+            </div>
+            {/* the ball rides its own track, opposite direction */}
+            <div className="pointer-events-none absolute inset-0"
+              style={{ transform: `rotate(${ballRot}deg)`,
+                       transition: rolling ? "transform 3.6s cubic-bezier(0.14, 0.72, 0.18, 1)" : "none" }}>
+              <div className="absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-gradient-to-b from-white to-slate-300 shadow-[0_1px_4px_rgba(0,0,0,0.8)]"
+                style={{ top: ballDropped ? "13%" : "5%",
+                         transition: "top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)" }} />
+            </div>
+            {/* result flag in the hub */}
+            {last && !rolling && (
+              <div className="absolute inset-0 grid place-items-center">
+                <span className={`grid h-12 w-12 place-items-center rounded-full border-2 border-gold text-lg font-black text-white shadow-pop ${
+                  last.color === "green" ? "bg-green-700" : last.color === "red" ? "bg-red-700" : "bg-neutral-900"}`}>
+                  {last.pocket}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {last && (

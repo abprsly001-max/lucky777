@@ -1484,6 +1484,8 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
 }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [sport, setSport] = useState("all");
+  const [visible, setVisible] = useState(80);
+  useEffect(() => { setVisible(80); }, [sport]);
 
   const upcoming = events.filter((e) => e.status === "scheduled")
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -1539,7 +1541,7 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
       </div>
 
       <div className="space-y-3">
-        {shown.slice(0, 60).map((ev) => {
+        {shown.slice(0, visible).map((ev) => {
           const kick = new Date(ev.starts_at + (ev.starts_at.endsWith("Z") ? "" : "Z"));
           const spread = ev.markets.find((m) => m.type === "spreads");
           const total = ev.markets.find((m) => m.type === "totals");
@@ -1624,8 +1626,11 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
             </div>
           );
         })}
-        {shown.length > 60 && (
-          <p className="text-center text-xs text-slate-500">Showing the next 60 games — pick a sport above to narrow.</p>
+        {shown.length > visible && (
+          <button onClick={() => setVisible((v) => v + 100)}
+            className="w-full rounded-xl border border-white/10 bg-base-800 py-3 text-sm font-bold text-slate-200 shadow-card hover:bg-base-700">
+            Show more games · {shown.length - visible} left
+          </button>
         )}
       </div>
 

@@ -119,6 +119,34 @@
     animation: reel-pop 0.3s ease-out;
   }
 
+  /* a reel strip whipping past the window */
+  @keyframes vs-spin {
+    from { transform: translateY(-50%); }
+    to { transform: translateY(0%); }
+  }
+  .vs-strip {
+    animation: vs-spin 0.24s linear infinite;
+    will-change: transform;
+  }
+  /* the strip slamming to a stop: overshoot, sink, settle */
+  @keyframes vs-stop {
+    0% { transform: translateY(-16px); }
+    55% { transform: translateY(6px); }
+    80% { transform: translateY(-2px); }
+    100% { transform: translateY(0); }
+  }
+  .vs-stop {
+    animation: vs-stop 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  /* the anticipation shimmer on a big-win frame */
+  @keyframes vs-glowpulse {
+    0%, 100% { box-shadow: 0 0 14px -2px rgba(240, 180, 41, 0.55); }
+    50% { box-shadow: 0 0 26px 0px rgba(240, 180, 41, 0.85); }
+  }
+  .vs-hot {
+    animation: vs-glowpulse 0.9s ease-in-out infinite;
+  }
+
   /* .font-mono here means "numbers that must line up" -- tabular figures */
   .font-mono {
     font-feature-settings: "tnum" 1, "cv05" 1;

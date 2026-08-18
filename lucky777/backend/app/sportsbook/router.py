@@ -38,13 +38,13 @@ async def sports(session: AsyncSession = Depends(get_session)):
 
 @router.get("/events")
 async def events(sport: str | None = None, competition: str | None = None,
-                 limit: int = 40, session: AsyncSession = Depends(get_session)):
+                 limit: int = 400, session: AsyncSession = Depends(get_session)):
     q = (select(Event, Competition, Sport)
          .join(Competition, Competition.id == Event.competition_id)
          .join(Sport, Sport.id == Competition.sport_id)
          .where(Event.status.in_(["scheduled", "live"]))
          # live games first ("live" < "scheduled"), then soonest kickoff
-         .order_by(Event.status.asc(), Event.starts_at).limit(min(limit, 200)))
+         .order_by(Event.status.asc(), Event.starts_at).limit(min(limit, 2000)))
     if sport:
         q = q.where(Sport.key == sport)
     if competition:
