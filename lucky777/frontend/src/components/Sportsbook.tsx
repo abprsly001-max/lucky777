@@ -349,10 +349,24 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         ))}
       </div>
 
-      <BetSlip slip={slip} setSlip={setSlip} preset={preset} presetTier={presetTier}
-        onPlaced={(b) => { onBalance(b); refreshBets();
-          api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
-            .catch(() => {}); }} />
+      <div id="bet-slip-anchor">
+        <BetSlip slip={slip} setSlip={setSlip} preset={preset} presetTier={presetTier}
+          onPlaced={(b) => { onBalance(b); refreshBets();
+            api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
+              .catch(() => {}); }} />
+      </div>
+
+      {/* phones: the slip lives below the fold — give every pick a visible
+          landing and a one-tap way down to it */}
+      {slip.length > 0 && view === "board" && (
+        <button
+          onClick={() => document.getElementById("bet-slip-anchor")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-between rounded-xl btn-gold px-4 py-3 text-sm font-black text-base-900 shadow-pop lg:hidden">
+          <span>Bet Slip · {slip.length} pick{slip.length > 1 ? "s" : ""}</span>
+          <span>Tap to place ↓</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -806,7 +820,6 @@ function BetSlip({ slip, setSlip, onPlaced, preset = "auto", presetTier = 0 }: {
               {quote.max_risk && <Line k="Max risk" v={quote.max_risk} />}
               <Line k="To return (best case)" v={quote.potential} accent />
               <Line k="Profit (best case)" v={quote.profit} />
-              {quote.margin_pct !== "—" && <Line k="Book margin" v={`${quote.margin_pct}%`} />}
               {slip.length > 1 && ticket === "auto" && (
                 <p className="pt-1 text-[10px] leading-snug text-slate-500">
                   Margin compounds with each leg — that’s why parlays are pushed so hard.
