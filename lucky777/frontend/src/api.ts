@@ -237,6 +237,11 @@ export const api = {
     request<{ round_id: number; status: string; point: string; won: boolean;
               multiplier: string | null; payout: string; balance: string }>(
       `/api/casino/crash/${roundId}/cashout`, { method: "POST" }),
+  crashState: (roundId: number) =>
+    request<{ status: string; point?: string; payout?: string; elapsed?: number }>(
+      `/api/casino/crash/${roundId}/state`, { method: "POST" }),
+  crashHistory: () =>
+    request<{ points: string[] }>("/api/casino/crash/history"),
   crashActive: () =>
     request<{ active: { round_id: number; rate: number; started_at: string;
                         stake: string } | null }>("/api/casino/crash/active"),

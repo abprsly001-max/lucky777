@@ -47,8 +47,8 @@ export default function PlayerView({ onBalance, username }: {
   ];
 
   return (
-    <div className="space-y-4">
-      <nav className="flex flex-wrap items-center gap-1.5">
+    <div className="space-y-4 pb-16 sm:pb-0">
+      <nav className="hidden flex-wrap items-center gap-1.5 sm:flex">
         <button onClick={() => setMenu(true)}
           className="rounded-lg border border-white/5 bg-base-800 shadow-card px-3 py-1.5 text-base leading-none text-gold hover:bg-base-700"
           aria-label="menu">
@@ -116,6 +116,23 @@ export default function PlayerView({ onBalance, username }: {
           </aside>
         </>
       )}
+
+      {/* phone app bar */}
+      <div className="fixed inset-x-0 bottom-0 z-50 grid h-14 grid-cols-5 border-t border-white/10 bg-base-900/95 backdrop-blur sm:hidden">
+        {([["board", "🏈", "Sports"], ["casino", "🎰", "Casino"],
+           ["wagers", "🧾", "My Bets"], ["figures", "📊", "Figures"]] as const)
+          .map(([id, icon, label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold ${
+              tab === id ? "text-gold" : "text-slate-400"}`}>
+            <span className="text-lg leading-none">{icon}</span>{label}
+          </button>
+        ))}
+        <button onClick={() => setMenu(true)}
+          className="flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold text-slate-400">
+          <span className="text-lg leading-none">☰</span>Menu
+        </button>
+      </div>
 
       {tab === "board" && <Sportsbook onBalance={balanced} isAdmin={false}
         onCasino={() => setTab("casino")} onHorses={() => setTab("horses")} />}
@@ -451,23 +468,21 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
           </button>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {games.map((g) => (
           <button key={g.key} onClick={() => setGame(g.key)}
             className="group overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-left transition hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-pop">
-            <div className="relative h-28 overflow-hidden">
+            <div className="relative h-20 overflow-hidden sm:h-24">
               <div className="h-full w-full transition duration-300 group-hover:scale-105">
                 <GameArt k={g.key} />
               </div>
+              <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-gold">
+                Original
+              </span>
             </div>
-            <div className="p-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-bold text-slate-100">{g.name}</span>
-              </div>
-              <div className="mt-0.5 font-mono text-[11px] text-slate-400">
-                Min: {Number(g.min).toFixed(2)} · Max: {Number(g.max).toFixed(2)}
-              </div>
-              <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{g.rules}</p>
+            <div className="flex items-center justify-between px-2.5 py-2">
+              <span className="truncate text-[13px] font-bold text-slate-100">{g.name}</span>
+              <span className="text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-gold">›</span>
             </div>
           </button>
         ))}
@@ -512,29 +527,44 @@ function SlotGame({ def, onBalance, onPlayed }: {
   const slot = def.slot!;
   const [stake, setStake] = useState("10");
   const [reels, setReels] = useState<string[]>([slot.symbols[0], slot.symbols[1], slot.symbols[2] ?? slot.symbols[0]]);
+  // per-reel state: each reel spins and stops on its own clock, like a machine
+  const [live, setLive] = useState<[boolean, boolean, boolean]>([false, false, false]);
+  const [popped, setPopped] = useState<[boolean, boolean, boolean]>([false, false, false]);
   const [spinning, setSpinning] = useState(false);
   const [last, setLast] = useState<{ multiplier: string; payout: string; win: boolean } | null>(null);
   const [err, setErr] = useState("");
 
   async function spin() {
     setErr(""); setLast(null); setSpinning(true);
-    const tick = window.setInterval(() => {
-      setReels(slot.symbols.map(() => slot.symbols[Math.floor(Math.random() * slot.symbols.length)]).slice(0, 3));
-    }, 75);
-    const started = Date.now();
+    setLive([true, true, true]); setPopped([false, false, false]);
+    const ticks = [0, 1, 2].map((i) => window.setInterval(() => {
+      setReels((r) => {
+        const n = [...r];
+        n[i] = slot.symbols[Math.floor(Math.random() * slot.symbols.length)];
+        return n;
+      });
+    }, 65 + i * 12));
+    const stopReel = (i: number, sym: string) => {
+      window.clearInterval(ticks[i]);
+      setReels((r) => { const n = [...r]; n[i] = sym; return n; });
+      setLive((l) => { const n = [...l] as typeof live; n[i] = false; return n; });
+      setPopped((pp) => { const n = [...pp] as typeof popped; n[i] = true; return n; });
+    };
     try {
       const r = await api.slotSpin(slot.machine, stake);
-      const wait = Math.max(0, 800 - (Date.now() - started));
-      await new Promise((res) => setTimeout(res, wait));
-      window.clearInterval(tick);
-      setReels(r.reels);
-      setLast({ multiplier: r.multiplier, payout: r.payout, win: r.win });
-      onBalance(r.balance);
-      onPlayed();
+      [0, 1, 2].forEach((i) => window.setTimeout(() => {
+        stopReel(i, r.reels[i]);
+        if (i === 2) {
+          setLast({ multiplier: r.multiplier, payout: r.payout, win: r.win });
+          onBalance(r.balance);
+          onPlayed();
+          setSpinning(false);
+        }
+      }, 500 + i * 380));
     } catch (e: any) {
-      window.clearInterval(tick);
+      ticks.forEach((t) => window.clearInterval(t));
+      setLive([false, false, false]);
       setErr(e.message);
-    } finally {
       setSpinning(false);
     }
   }
@@ -549,14 +579,25 @@ function SlotGame({ def, onBalance, onPlayed }: {
 
         {/* the machine */}
         <div className="rounded-xl border border-gold/25 bg-gradient-to-b from-base-900 to-base-950 p-4">
+          {/* marquee */}
+          <div className="mb-2 flex justify-center gap-1.5">
+            {Array.from({ length: 9 }, (_, i) => (
+              <span key={i} className={`h-1.5 w-1.5 rounded-full ${
+                spinning ? "animate-pulse bg-gold" : i % 2 ? "bg-gold/70" : "bg-gold/25"}`} />
+            ))}
+          </div>
           <div className="mx-auto grid max-w-xs grid-cols-3 gap-2">
             {reels.map((sym, i) => (
               <div key={i}
-                className={`grid h-24 place-items-center overflow-hidden rounded-lg border bg-base-900 ${
+                className={`relative grid h-24 place-items-center overflow-hidden rounded-lg border bg-base-900 ${
                   last && last.win && !spinning
                     ? "border-accent/60 shadow-[0_0_18px_-4px_rgba(74,222,128,0.5)]"
-                    : "border-white/10"} ${spinning ? "animate-pulse" : ""}`}>
-                <SlotSymbol sym={sym} />
+                    : live[i] ? "border-gold/40" : "border-white/10"}`}>
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-5 bg-gradient-to-b from-black/50 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-black/50 to-transparent" />
+                <span className={live[i] ? "blur-[2px] opacity-80" : popped[i] ? "reel-pop" : ""}>
+                  <SlotSymbol sym={sym} />
+                </span>
               </div>
             ))}
           </div>
@@ -1186,32 +1227,59 @@ function Plinko({ def, onBalance, onPlayed }: {
 }
 
 // ----------------------------------------------------------------- crash ----
+function crashColor(pt: number): string {
+  if (pt >= 10) return "text-gold";
+  if (pt >= 2) return "text-accent";
+  return "text-red-400";
+}
+
 function Crash({ onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
   const [stake, setStake] = useState("10");
   const [auto, setAuto] = useState("");
   const [flying, setFlying] = useState<{ id: number; rate: number; t0: number } | null>(null);
-  const [mult, setMult] = useState("1.00");
+  const [mult, setMult] = useState(1);
   const [res, setRes] = useState<{ won: boolean; point: string; multiplier: string | null; payout: string } | null>(null);
+  const [hist, setHist] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  const loadHist = () => api.crashHistory().then((r) => setHist(r.points)).catch(() => {});
   useEffect(() => {
+    loadHist();
     api.crashActive().then((r) => {
       if (r.active) setFlying({ id: r.active.round_id, rate: r.active.rate,
                                 t0: new Date(r.active.started_at).getTime() });
     }).catch(() => {});
   }, []);
 
+  // the animation clock
   useEffect(() => {
     if (!flying) return;
     const iv = window.setInterval(() => {
       const secs = (Date.now() - flying.t0) / 1000;
-      setMult(Math.min(1000, Math.exp(flying.rate * Math.max(0, secs))).toFixed(2));
-    }, 60);
+      setMult(Math.min(1000, Math.exp(flying.rate * Math.max(0, secs))));
+    }, 50);
     return () => window.clearInterval(iv);
   }, [flying]);
+
+  // the flight check: the server decides when the rocket dies
+  useEffect(() => {
+    if (!flying) return;
+    const iv = window.setInterval(async () => {
+      try {
+        const st = await api.crashState(flying.id);
+        if (st.status === "bust") {
+          setRes({ won: false, point: st.point!, multiplier: null, payout: "0" });
+          setFlying(null); onPlayed(); loadHist();
+        } else if (st.status !== "flying") {
+          setFlying(null);
+        }
+      } catch { /* transient */ }
+    }, 1000);
+    return () => window.clearInterval(iv);
+  }, [flying, onPlayed]);
 
   async function start() {
     setErr(""); setBusy(true); setRes(null);
@@ -1220,10 +1288,10 @@ function Crash({ onBalance, onPlayed }: {
       onBalance(r.balance);
       if (r.status === "open" && r.rate && r.started_at) {
         setFlying({ id: r.round_id, rate: r.rate, t0: new Date(r.started_at).getTime() });
-        setMult("1.00");
+        setMult(1);
       } else {
         setRes({ won: !!r.won, point: r.point!, multiplier: r.multiplier ?? null, payout: r.payout! });
-        onPlayed();
+        onPlayed(); loadHist();
       }
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
@@ -1234,50 +1302,86 @@ function Crash({ onBalance, onPlayed }: {
     try {
       const r = await api.crashCashout(flying.id);
       setRes({ won: r.won, point: r.point, multiplier: r.multiplier, payout: r.payout });
-      setFlying(null); onBalance(r.balance); onPlayed();
+      setFlying(null); onBalance(r.balance); onPlayed(); loadHist();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
 
+  // ---- the curve
+  const W = 320, H = 170;
+  const elapsed = flying ? Math.max(0.05, (Date.now() - flying.t0) / 1000) : 0;
+  const tView = Math.max(6, elapsed * 1.15);
+  const mMax = Math.max(2, mult * 1.2);
+  const pts: string[] = [];
+  if (flying) {
+    for (let i = 0; i <= 48; i++) {
+      const t = (i / 48) * elapsed;
+      const m = Math.exp(flying.rate * t);
+      const x = 12 + (t / tView) * (W - 24);
+      const y = H - 14 - ((m - 1) / (mMax - 1)) * (H - 34);
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+  }
+
+  const state = flying ? "flying" : res ? (res.won ? "cashed" : "busted") : "idle";
+
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
-      <div className="mb-1 flex items-baseline justify-between">
+      <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-bold text-slate-100">🚀 Crash</h3>
-      </div>
-      <p className="mb-3 text-[10px] text-slate-500">
-        The multiplier climbs until it busts. Cash out first — or set an auto target
-        and it resolves instantly.
-      </p>
-
-      <div className={`mb-3 grid h-36 place-items-center rounded-xl border ${
-        flying ? "border-accent/40 bg-gradient-to-b from-base-900 to-base-950"
-        : res ? (res.won ? "border-accent/40 bg-base-900/70" : "border-red-500/40 bg-base-900/70")
-        : "border-white/10 bg-base-900/70"}`}>
-        {flying ? (
-          <div className="text-center">
-            <div className="font-mono text-5xl font-black text-accent">{mult}×</div>
-            <div className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">climbing…</div>
-          </div>
-        ) : res ? (
-          <div className="text-center">
-            {res.won ? (
-              <>
-                <div className="font-mono text-4xl font-black text-accent">{res.multiplier}×</div>
-                <div className="mt-1 text-sm font-bold text-accent">Cashed out — paid {money(res.payout)}</div>
-                <div className="mt-0.5 text-[10px] text-slate-500">it went on to bust at {res.point}×</div>
-              </>
-            ) : (
-              <>
-                <div className="font-mono text-4xl font-black text-red-400">💥 {res.point}×</div>
-                <div className="mt-1 text-sm font-bold text-red-400">Busted before you cashed</div>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="font-mono text-4xl font-black text-slate-600">1.00×</div>
-        )}
+        <div className="-my-1 flex gap-1 overflow-x-auto">
+          {hist.slice(0, 10).map((h, i) => (
+            <span key={i} className={`rounded-full bg-base-900 px-2 py-0.5 font-mono text-[10px] font-bold ${crashColor(Number(h))}`}>
+              {Number(h).toFixed(2)}x
+            </span>
+          ))}
+        </div>
       </div>
 
-      <div className="flex items-end gap-2">
+      <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-b from-base-900 to-base-950 ${
+        state === "flying" ? "border-accent/40" : state === "cashed" ? "border-accent/50"
+        : state === "busted" ? "border-red-500/50" : "border-white/10"}`}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={f} x1="12" x2={W - 12} y1={H - 14 - f * (H - 34)} y2={H - 14 - f * (H - 34)}
+              stroke="rgba(255,255,255,0.05)" />
+          ))}
+          {flying && pts.length > 1 && (
+            <>
+              <polyline points={`12,${H - 14} ${pts.join(" ")}`} fill="none"
+                stroke="#4ade80" strokeWidth="3" strokeLinecap="round" />
+              <polygon points={`12,${H - 14} ${pts.join(" ")} ${pts[pts.length - 1].split(",")[0]},${H - 14}`}
+                fill="rgba(74,222,128,0.10)" />
+              <circle cx={pts[pts.length - 1].split(",")[0]} cy={pts[pts.length - 1].split(",")[1]}
+                r="5" fill="#4ade80" />
+            </>
+          )}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          {state === "flying" && (
+            <div className="text-center">
+              <div className="font-mono text-5xl font-black text-accent drop-shadow">{mult.toFixed(2)}×</div>
+            </div>
+          )}
+          {state === "cashed" && res && (
+            <div className="text-center">
+              <div className="font-mono text-4xl font-black text-accent">{res.multiplier}×</div>
+              <div className="mt-1 text-sm font-bold text-accent">Cashed — paid {money(res.payout)}</div>
+              <div className="text-[10px] text-slate-500">busted later at {res.point}×</div>
+            </div>
+          )}
+          {state === "busted" && res && (
+            <div className="text-center">
+              <div className="font-mono text-4xl font-black text-red-400">💥 {Number(res.point).toFixed(2)}×</div>
+              <div className="mt-1 text-sm font-bold text-red-400">Busted</div>
+            </div>
+          )}
+          {state === "idle" && (
+            <div className="font-mono text-4xl font-black text-slate-600">1.00×</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-end gap-2">
         <label className="text-xs">
           <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Stake</span>
           <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={!!flying}
@@ -1292,7 +1396,7 @@ function Crash({ onBalance, onPlayed }: {
         {flying ? (
           <button onClick={cashout} disabled={busy}
             className="ml-auto animate-pulse rounded-lg bg-accent px-6 py-2 text-sm font-black uppercase tracking-wider text-base-900 hover:brightness-110 disabled:opacity-50">
-            Cash out {mult}×
+            Cash out {mult.toFixed(2)}×
           </button>
         ) : (
           <button onClick={start} disabled={busy}

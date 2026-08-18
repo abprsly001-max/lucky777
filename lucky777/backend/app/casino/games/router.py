@@ -884,6 +884,52 @@ async def crash_cashout(round_id: int, user: User = Depends(betting_user),
             "balance": str(from_micros(balance))}
 
 
+@router.get("/crash/history")
+async def crash_history(user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    """The last busts, newest first -- the strip above the launch button."""
+    rows = (await session.execute(
+        select(CasinoRound).where(CasinoRound.game == "crash",
+                                  CasinoRound.status == "settled")
+        .order_by(CasinoRound.id.desc()).limit(15))).scalars().all()
+    out = []
+    for r in rows:
+        try:
+            out.append(json.loads(r.detail).get("point"))
+        except ValueError:
+            continue
+    await session.commit()
+    return {"points": [p for p in out if p]}
+
+
+@router.post("/crash/{round_id}/state")
+async def crash_state(round_id: int, user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    """The flight check. The moment the curve passes the secret point the
+    round busts SERVER-SIDE -- whether or not the player is still watching --
+    so a rocket can never hang in the air forever."""
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "crash":
+        raise HTTPException(404, "no such round")
+    st = json.loads(rnd.detail)
+    point = Decimal(st["point"])
+    if rnd.status != "open":
+        return {"status": rnd.outcome or "settled", "point": str(point),
+                "payout": str(from_micros(rnd.payout_micros or 0))}
+    started = rnd.created_at if rnd.created_at.tzinfo else rnd.created_at.replace(tzinfo=timezone.utc)
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    cur = E.crash_multiplier_at(elapsed)
+    if cur >= point:
+        rnd.payout_micros = 0
+        rnd.status = "settled"
+        rnd.outcome = "bust"
+        rnd.settled_at = datetime.now(timezone.utc)
+        await session.commit()
+        return {"status": "bust", "point": str(point), "payout": "0"}
+    await session.commit()
+    return {"status": "flying", "elapsed": elapsed}
+
+
 @router.get("/crash/active")
 async def crash_active(user: User = Depends(current_user),
                        session: AsyncSession = Depends(get_session)):

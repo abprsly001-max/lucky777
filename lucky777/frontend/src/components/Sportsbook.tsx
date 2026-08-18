@@ -385,7 +385,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         <button
           onClick={() => document.getElementById("bet-slip-anchor")
             ?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-between rounded-xl btn-gold px-4 py-3 text-sm font-black text-base-900 shadow-pop lg:hidden">
+          className="fixed inset-x-3 bottom-[4.2rem] z-40 flex items-center justify-between rounded-xl btn-gold px-4 py-3 text-sm font-black text-base-900 shadow-pop lg:hidden">
           <span>Bet Slip · {slip.length} pick{slip.length > 1 ? "s" : ""}</span>
           <span>Tap to place ↓</span>
         </button>
@@ -1630,7 +1630,7 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
       </div>
 
       {/* sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-base-900/95 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-14 z-40 border-t border-white/10 bg-base-900/95 backdrop-blur sm:bottom-0">
         <div className="mx-auto flex max-w-7xl gap-2 p-2">
           <button onClick={onRefresh}
             className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-bold text-slate-300 hover:border-white/30">

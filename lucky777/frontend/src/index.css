@@ -108,6 +108,17 @@
 }
 
 @layer utilities {
+  /* a reel locking into place */
+  @keyframes reel-pop {
+    0% { transform: scale(1.35); }
+    60% { transform: scale(0.92); }
+    100% { transform: scale(1); }
+  }
+  .reel-pop {
+    display: inline-block;
+    animation: reel-pop 0.3s ease-out;
+  }
+
   /* .font-mono here means "numbers that must line up" -- tabular figures */
   .font-mono {
     font-feature-settings: "tnum" 1, "cv05" 1;
