@@ -1463,21 +1463,17 @@ function pickLabel(ev: SbEvent, m: SbMarket, sel: SbSelection): [string, string]
   return [`${sel.name} ${sel.american}`, m.name];
 }
 
-function ClassicCheck({ ev, m, sel, picks, onToggle, children }: {
-  ev: SbEvent; m: SbMarket; sel: SbSelection | undefined;
-  picks: Map<number, ClassicPick>; onToggle: (p: ClassicPick) => void;
-  children?: React.ReactNode;
+function PriceChip({ top, bottom, on, onClick }: {
+  top: string | null; bottom: string; on: boolean; onClick: () => void;
 }) {
-  if (!sel) return <div className="flex-1" />;
-  const on = picks.has(sel.id);
-  const [label, sub] = pickLabel(ev, m, sel);
   return (
-    <label className="flex flex-1 cursor-pointer items-center justify-end gap-2 py-0.5 select-none">
-      <span className="font-mono text-[15px] font-bold text-slate-900">{children}</span>
-      <input type="checkbox" checked={on}
-        onChange={() => onToggle({ ev, m, sel, label, sub, mode: "risk", amount: "100" })}
-        className="h-5 w-5 rounded border-slate-400 accent-red-700" />
-    </label>
+    <button onClick={onClick}
+      className={`flex h-12 w-full flex-col items-center justify-center rounded-lg border text-[13px] leading-tight transition ${
+        on ? "border-gold bg-gold text-base-900 shadow-gold"
+          : "border-slate-300 bg-white text-slate-900 hover:border-gold/70 hover:bg-amber-50"}`}>
+      {top && <span className={`font-semibold ${on ? "text-base-900/80" : "text-slate-700"}`}>{top}</span>}
+      <span className={`font-mono font-bold ${on ? "" : "text-emerald-700"}`}>{bottom}</span>
+    </button>
   );
 }
 
@@ -1487,8 +1483,34 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
   onRefresh: () => void; onContinue: () => void; onProps?: () => void;
 }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
+  const [sport, setSport] = useState("all");
+
   const upcoming = events.filter((e) => e.status === "scheduled")
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
+  const sports = useMemo(() => {
+    const seen = new Map<string, { name: string; icon: string; n: number }>();
+    for (const e of upcoming) {
+      const x = seen.get(e.sport) ?? { name: e.sport_name, icon: e.icon, n: 0 };
+      x.n += 1;
+      seen.set(e.sport, x);
+    }
+    return [...seen.entries()];
+  }, [events]);
+
+  const shown = upcoming.filter((e) => sport === "all" || e.sport === sport);
+
+  const mk = (ev: SbEvent, m: SbMarket, key: string): ClassicPick | null => {
+    const sel = m.selections.find((x) => x.key === key);
+    if (!sel) return null;
+    const [label, sub] = pickLabel(ev, m, sel);
+    return { ev, m, sel, label, sub, mode: "risk", amount: "100" };
+  };
+  const chip = (pk: ClassicPick | null, top: string | null, bottom?: string) =>
+    pk ? (
+      <PriceChip top={top} bottom={bottom ?? pk.sel.american}
+        on={picks.has(pk.sel.id)} onClick={() => onToggle(pk)} />
+    ) : <div className="h-12 rounded-lg border border-dashed border-slate-200" />;
 
   if (upcoming.length === 0) {
     return (
@@ -1498,128 +1520,128 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
     );
   }
 
-  const row = (labelTag: string, left: React.ReactNode, right: React.ReactNode,
-               shade = false) => (
-    <div className={`flex items-center gap-2 border-t border-slate-300 px-2 ${
-      shade ? "bg-slate-200/60" : "bg-white"}`}>
-      <span className="w-8 shrink-0 text-[13px] font-black text-red-700">{labelTag}</span>
-      <div className="flex flex-1 items-center justify-end border-r border-slate-300 pr-2">{left}</div>
-      <div className="flex flex-1 items-center justify-end pl-1">{right}</div>
-    </div>
-  );
-
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-100 pb-14 shadow-card">
-      {upcoming.map((ev) => {
-        const kick = new Date(ev.starts_at + (ev.starts_at.endsWith("Z") ? "" : "Z"));
-        const spread = ev.markets.find((m) => m.type === "spreads");
-        const total = ev.markets.find((m) => m.type === "totals");
-        const ml = ev.markets.find((m) => m.type === "h2h");
-        const sel = (m: SbMarket | undefined, key: string) =>
-          m?.selections.find((x) => x.key === key);
-        const mains = new Set([spread?.id, total?.id, ml?.id]);
-        const rest = ev.markets.filter((m) => !mains.has(m.id)
-          && !m.type.startsWith("prop:") && !m.type.startsWith("alt_"));
-        const draw = sel(ml, "draw");
-        return (
-          <div key={ev.id}>
-            {/* date strip */}
-            <div className="flex items-center justify-between bg-slate-800 px-3 py-1.5 text-[13px] text-white">
-              <span className="flex items-center gap-2">
-                <span>🕐</span>
-                {kick.toLocaleDateString(undefined, { weekday: "long", month: "numeric", day: "numeric" })}{" "}
-                {kick.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-              </span>
-              <span className="flex items-center gap-1.5 font-semibold">
-                {ev.icon} {ev.competition}
-              </span>
-            </div>
-            {/* team header */}
-            <div className="flex items-center gap-2 bg-white px-2 pt-2 pb-1">
-              <span className="w-8 shrink-0" />
-              <div className="flex flex-1 items-center justify-center gap-2 border-r border-slate-300">
-                <span className="text-[15px] font-bold text-slate-900">{ev.home}</span>
-                <TeamMark name={ev.home} />
-              </div>
-              <div className="flex flex-1 items-center justify-center gap-2">
-                <span className="text-[15px] font-bold text-slate-900">{ev.away}</span>
-                <TeamMark name={ev.away} />
-              </div>
-            </div>
+    <div className="pb-16">
+      {/* sport strip */}
+      <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-1">
+        <button onClick={() => setSport("all")}
+          className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl px-4 py-2 text-[11px] font-semibold ${
+            sport === "all" ? "btn-gold text-base-900" : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+          <span className="text-lg">🏆</span>All
+        </button>
+        {sports.map(([key, sp]) => (
+          <button key={key} onClick={() => setSport(key)}
+            className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl px-4 py-2 text-[11px] font-semibold ${
+              sport === key ? "btn-gold text-base-900" : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+            <span className="text-lg">{sp.icon}</span>{sp.name}
+          </button>
+        ))}
+      </div>
 
-            {spread && row("SP",
-              <ClassicCheck ev={ev} m={spread} sel={sel(spread, "home")} picks={picks} onToggle={onToggle}>
-                {half(fmtLine(Number(spread.line)))} {sel(spread, "home")?.american}
-              </ClassicCheck>,
-              <ClassicCheck ev={ev} m={spread} sel={sel(spread, "away")} picks={picks} onToggle={onToggle}>
-                {half(fmtLine(-Number(spread.line)))} {sel(spread, "away")?.american}
-              </ClassicCheck>, true)}
-
-            {ml && row("ML",
-              <ClassicCheck ev={ev} m={ml} sel={sel(ml, "home")} picks={picks} onToggle={onToggle}>
-                {sel(ml, "home")?.american}
-              </ClassicCheck>,
-              <ClassicCheck ev={ev} m={ml} sel={sel(ml, "away")} picks={picks} onToggle={onToggle}>
-                {sel(ml, "away")?.american}
-              </ClassicCheck>)}
-
-            {draw && ml && row("DR",
-              <ClassicCheck ev={ev} m={ml} sel={draw} picks={picks} onToggle={onToggle}>
-                Draw {draw.american}
-              </ClassicCheck>,
-              <div className="flex-1" />, true)}
-
-            {total && row("TP",
-              <ClassicCheck ev={ev} m={total} sel={sel(total, "over")} picks={picks} onToggle={onToggle}>
-                O {half(total.line ?? "")} {sel(total, "over")?.american}
-              </ClassicCheck>,
-              <ClassicCheck ev={ev} m={total} sel={sel(total, "under")} picks={picks} onToggle={onToggle}>
-                U {half(total.line ?? "")} {sel(total, "under")?.american}
-              </ClassicCheck>, !draw)}
-
-            {open.has(ev.id) && rest.map((m) => (
-              <div key={m.id} className="flex items-center gap-2 border-t border-slate-300 bg-slate-50 px-2 py-0.5">
-                <span className="w-20 shrink-0 text-[10px] font-bold uppercase text-slate-500">{m.name}</span>
-                <div className="flex flex-1 flex-wrap justify-end gap-x-4">
-                  {m.selections.map((x) => (
-                    <ClassicCheck key={x.id} ev={ev} m={m} sel={x} picks={picks} onToggle={onToggle}>
-                      <span className="text-[12px]">{x.name}</span> {x.american}
-                    </ClassicCheck>
-                  ))}
+      <div className="space-y-3">
+        {shown.slice(0, 60).map((ev) => {
+          const kick = new Date(ev.starts_at + (ev.starts_at.endsWith("Z") ? "" : "Z"));
+          const spread = ev.markets.find((m) => m.type === "spreads");
+          const total = ev.markets.find((m) => m.type === "totals");
+          const ml = ev.markets.find((m) => m.type === "h2h");
+          const mains = new Set([spread?.id, total?.id, ml?.id]);
+          const rest = ev.markets.filter((m) => !mains.has(m.id)
+            && !m.type.startsWith("prop:") && !m.type.startsWith("alt_"));
+          const draw = ml?.selections.find((x) => x.key === "draw");
+          const teamRow = (side: "home" | "away") => {
+            const name = side === "home" ? ev.home : ev.away;
+            const spk = spread ? mk(ev, spread, side) : null;
+            const tkey = side === "home" ? "over" : "under";
+            const tpk = total ? mk(ev, total, tkey) : null;
+            const mpk = ml ? mk(ev, ml, side) : null;
+            const line = spread ? (side === "home" ? Number(spread.line) : -Number(spread.line)) : 0;
+            return (
+              <div className="grid grid-cols-[minmax(0,1.3fr)_1fr_1fr_1fr] items-center gap-1.5 px-3 py-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <TeamMark name={name} />
+                  <span className="truncate text-[13px] font-semibold text-slate-900">{name}</span>
                 </div>
+                {chip(spk, spread ? half(fmtLine(line)) : null)}
+                {chip(tpk, total ? `${tkey === "over" ? "O" : "U"} ${half(total.line ?? "")}` : null)}
+                {chip(mpk, null)}
               </div>
-            ))}
-
-            <div className="flex items-center gap-2 border-t border-slate-300 bg-slate-200 px-2 py-1.5">
-              {rest.length > 0 && (
-                <button onClick={() => setOpen((o) => {
-                  const n = new Set(o); n.has(ev.id) ? n.delete(ev.id) : n.add(ev.id); return n;
-                })}
-                  className="rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600">
-                  Event {open.has(ev.id) ? "−" : `+${rest.length}`}
-                </button>
+            );
+          };
+          return (
+            <div key={ev.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                  {ev.icon} {ev.competition}
+                </span>
+                <span className="text-[11px] font-medium text-slate-500">
+                  {kick.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                  {" · "}
+                  {kick.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                </span>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1.3fr)_1fr_1fr_1fr] gap-1.5 px-3 pt-2 text-center text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span />
+                <span>Spread</span><span>Total</span><span>Money</span>
+              </div>
+              {teamRow("home")}
+              {teamRow("away")}
+              {draw && ml && (
+                <div className="grid grid-cols-[minmax(0,1.3fr)_1fr_1fr_1fr] items-center gap-1.5 px-3 pb-1.5">
+                  <span className="text-[13px] font-semibold text-slate-500">Draw</span>
+                  <div /><div />
+                  {chip(mk(ev, ml, "draw"), null)}
+                </div>
               )}
-              {onProps && (
-                <button onClick={onProps}
-                  className="rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600">
-                  PROPS +
-                </button>
-              )}
+              {open.has(ev.id) && rest.map((m) => (
+                <div key={m.id} className="border-t border-slate-100 px-3 py-2">
+                  <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{m.name}</div>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {m.selections.map((x) => {
+                      const pk = mk(ev, m, x.key);
+                      return pk ? (
+                        <PriceChip key={x.id} top={x.name} bottom={x.american}
+                          on={picks.has(x.id)} onClick={() => onToggle(pk)} />
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-between border-t border-slate-100 px-3 py-1.5">
+                {rest.length > 0 ? (
+                  <button onClick={() => setOpen((o) => {
+                    const n = new Set(o); n.has(ev.id) ? n.delete(ev.id) : n.add(ev.id); return n;
+                  })}
+                    className="text-xs font-bold text-sky-600 hover:text-sky-500">
+                    {open.has(ev.id) ? "Fewer bets ⌃" : `More bets (${rest.length}) ›`}
+                  </button>
+                ) : <span />}
+                {onProps && (
+                  <button onClick={onProps} className="text-xs font-bold text-fuchsia-600 hover:text-fuchsia-500">
+                    Player props ›
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+        {shown.length > 60 && (
+          <p className="text-center text-xs text-slate-500">Showing the next 60 games — pick a sport above to narrow.</p>
+        )}
+      </div>
 
       {/* sticky action bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-7xl gap-1 p-2">
-        <button onClick={onRefresh}
-          className="flex-1 rounded-md bg-red-800 py-3 text-base font-bold text-white shadow-pop hover:bg-red-700">
-          Refresh
-        </button>
-        <button onClick={onContinue} disabled={picks.size === 0}
-          className="flex-1 rounded-md bg-green-600 py-3 text-base font-bold text-white shadow-pop hover:bg-green-500 disabled:opacity-60">
-          Continue{picks.size > 0 ? ` (${picks.size})` : ""}
-        </button>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-base-900/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl gap-2 p-2">
+          <button onClick={onRefresh}
+            className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-bold text-slate-300 hover:border-white/30">
+            Refresh
+          </button>
+          <button onClick={onContinue} disabled={picks.size === 0}
+            className="flex-1 rounded-lg bg-green-600 py-2.5 text-sm font-black text-white shadow-pop hover:bg-green-500 disabled:opacity-50">
+            {picks.size === 0 ? "Select your plays"
+              : `Continue · ${picks.size} pick${picks.size > 1 ? "s" : ""}`}
+          </button>
+        </div>
       </div>
     </div>
   );
