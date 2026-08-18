@@ -1124,11 +1124,22 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
   const [moreTotal, setMoreTotal] = useState(false);
 
   const h2h = ev.markets.find((m) => m.type === "h2h");
+  // the book's style: friendliest line for the first side at the top,
+  // main line marked — the rung where the two prices sit closest to even
   const spreads = ev.markets.filter((m) => m.type === "alt_spreads")
-    .sort((a, b) => Number(a.line) - Number(b.line));
+    .sort((a, b) => Number(b.line) - Number(a.line));
   const totals = ev.markets.filter((m) => m.type === "alt_totals")
-    .sort((a, b) => Number(a.line) - Number(b.line));
+    .sort((a, b) => Number(b.line) - Number(a.line));
   const periods = ev.period_scores ?? [];
+
+  const evenness = (m: SbMarket) => {
+    const a = Number(m.selections[0]?.odds), b = Number(m.selections[1]?.odds);
+    if (!a || !b) return 9;
+    const p = (1 / a) / (1 / a + 1 / b);
+    return Math.abs(p - 0.5);
+  };
+  const mainOf = (ms: SbMarket[]) =>
+    ms.reduce((best, m) => (evenness(m) < evenness(best) ? m : best), ms[0]);
 
   const groupHead = (id: string, label: string) => (
     <button onClick={() => setOpenGroups({ ...openGroups, [id]: !openGroups[id] })}
@@ -1138,7 +1149,7 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
     </button>
   );
 
-  const pairBtn = (m: SbMarket, sel: SbSelection | undefined, label: string, bold = false) => {
+  const pairBtn = (m: SbMarket, sel: SbSelection | undefined, label: string, main = false) => {
     if (!sel) return <div className="h-10 rounded bg-base-900/40" />;
     const on = selected.has(sel.id);
     return (
@@ -1146,8 +1157,9 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
         className={`flex h-10 w-full items-center justify-between rounded border px-3 text-xs transition ${
           on ? "btn-gold border-transparent text-base-900"
             : "border-white/5 bg-base-700/60 hover:border-gold/40 hover:bg-base-600"}`}>
-        <span className={`truncate ${bold ? "font-bold" : ""} ${on ? "text-base-900" : "text-slate-200"}`}>
-          {label}
+        <span className={`flex min-w-0 items-center gap-1.5 ${on ? "text-base-900" : "text-slate-200"}`}>
+          {main && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-base-900" : "bg-slate-400"}`} />}
+          <span className={`truncate ${main ? "font-bold" : ""}`}>{label}</span>
         </span>
         <span className={`font-mono font-semibold ${on ? "text-base-900" : "text-gold"}`}>{sel.american}</span>
       </button>
@@ -1156,15 +1168,17 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
 
   const ladder = (ms: SbMarket[], expanded: boolean, setMore: (b: boolean) => void,
                   labelFor: (m: SbMarket, side: 0 | 1) => string) => {
-    const mid = Math.floor(ms.length / 2);
-    const shown = expanded ? ms : ms.slice(Math.max(0, mid - 2), mid + 3);
+    const main = mainOf(ms);
+    const mi = ms.indexOf(main);
+    const shown = expanded ? ms
+      : ms.slice(Math.max(0, mi - 3), Math.max(0, mi - 3) + 7);
     const hidden = ms.length - shown.length;
     return (
       <div className="space-y-1 p-2">
         {shown.map((m) => (
           <div key={m.id} className="grid grid-cols-2 gap-1">
-            {pairBtn(m, m.selections[0], labelFor(m, 0), Number(m.line) % 1 !== 0)}
-            {pairBtn(m, m.selections[1], labelFor(m, 1), Number(m.line) % 1 !== 0)}
+            {pairBtn(m, m.selections[0], labelFor(m, 0), m === main)}
+            {pairBtn(m, m.selections[1], labelFor(m, 1), m === main)}
           </div>
         ))}
         {hidden > 0 && (
@@ -1217,6 +1231,11 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* scope tabs — period markets slot in here as they come online */}
+      <div className="-mx-1 flex gap-1 overflow-x-auto px-1">
+        <span className="shrink-0 rounded-lg bg-base-700 px-4 py-1.5 text-xs font-bold text-gold">Game</span>
       </div>
 
       {/* market groups */}
