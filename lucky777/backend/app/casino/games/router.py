@@ -66,6 +66,23 @@ async def _pay(session, house, wallet, amount, ref_type, ref_id, key):
             ref_type=ref_type, ref_id=ref_id)
 
 
+def _holdspin_entry(mn: str, mx: str) -> list[dict]:
+    from . import holdspin as HS
+    grand = (HS.GRAND_MULT * HS._scale).quantize(Decimal("0.1"))
+    return [{
+        "key": "holdspin", "name": "Piggy Bank Blast", "icon": "🐷",
+        "category": "slots", "min": mn, "max": mx,
+        "rules": f"Coins pay their face the moment they land. Six or more "
+                 f"locks them in and starts 3 respins — every new coin resets "
+                 f"the count. Fill all 15 for the {grand}x Grand.",
+        "holdspin": {
+            "trigger": HS.TRIGGER, "respins": HS.RESPINS,
+            "grand": str(grand),
+            "faces": [str(v) for v, _ in HS.scaled_coin_values()],
+        },
+    }]
+
+
 def _vslot_entries(mn: str, mx: str) -> list[dict]:
     from . import videoslots as VS
     out = []
@@ -116,7 +133,8 @@ async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
     mx = settings.max_bet_credits
     return {
-        "games": _vslot_entries(settings.min_bet_credits, mx)
+        "games": _holdspin_entry(settings.min_bet_credits, mx)
+                 + _vslot_entries(settings.min_bet_credits, mx)
                  + _slot_entries(settings.min_bet_credits, mx) + [
             {"key": "roulette", "name": "Roulette", "icon": "🎯", "category": "table",
              "min": settings.min_bet_credits, "max": mx,
@@ -685,6 +703,124 @@ async def plinko_drop(req: PlinkoRequest, user: User = Depends(betting_user),
             "multiplier": str(out.multiplier),
             "payout": str(from_micros(payout)),
             "balance": str(from_micros(balance))}
+
+
+# ------------------------------------------------------------ hold & spin ----
+class HoldSpinReq(BaseModel):
+    stake: str
+    idempotency_key: str | None = None
+
+
+async def _hs_open(session, user_id: int):
+    return (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user_id,
+                                  CasinoRound.game == "holdspin",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+
+
+def _hs_public(rnd, st, extra=None):
+    out = {"round_id": rnd.id, "status": rnd.status,
+           "locked": st["locked"], "respins": st["respins"],
+           "stake": str(from_micros(rnd.stake_micros)),
+           "collected": str(from_micros(st["collected"]))}
+    if extra:
+        out.update(extra)
+    return out
+
+
+@router.post("/holdspin/spin")
+async def holdspin_spin(req: HoldSpinReq, user: User = Depends(betting_user),
+                        session: AsyncSession = Depends(get_session)):
+    from . import holdspin as HS
+    _casino_gate(user)
+    if await _hs_open(session, user.id):
+        raise HTTPException(409, "finish your respins first")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    b = HS.base_spin(pair.server_seed, pair.client_seed, nonce)
+    win = sum(payout_micros(stake_m, Decimal(v)) for v in b.coins.values())
+
+    st = {"locked": {str(c): v for c, v in b.coins.items()},
+          "respins": HS.RESPINS, "collected": win}
+    rnd = CasinoRound(game="holdspin", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m,
+                      status="open" if b.triggered else "settled",
+                      outcome="feature" if b.triggered
+                              else ("win" if win > 0 else "lose"),
+                      payout_micros=None if b.triggered else win,
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "holdspin_spin", rnd.id,
+                                  f"hs:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "holdspin_spin", rnd.id,
+               f"hs:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _hs_public(rnd, st, {"coins": b.coins, "win": str(from_micros(win)),
+                                "triggered": b.triggered,
+                                "balance": str(from_micros(balance))})
+
+
+@router.post("/holdspin/respin")
+async def holdspin_respin(user: User = Depends(betting_user),
+                          session: AsyncSession = Depends(get_session)):
+    from . import holdspin as HS
+    rnd = await _hs_open(session, user.id)
+    if rnd is None:
+        raise HTTPException(404, "no feature in play")
+    st = json.loads(rnd.detail)
+    locked_cells = [int(c) for c in st["locked"]]
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    new = HS.respin(pair.server_seed, pair.client_seed, nonce, locked_cells)
+    win = sum(payout_micros(rnd.stake_micros, Decimal(v)) for v in new.values())
+
+    for c, v in new.items():
+        st["locked"][str(c)] = v
+    if new:
+        st["respins"] = HS.RESPINS
+    else:
+        st["respins"] -= 1
+    st["collected"] += win
+
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, win, "holdspin_spin", rnd.id,
+               f"hs:{rnd.id}:rs:{nonce}")
+
+    grand = 0
+    full = len(st["locked"]) >= HS.CELLS
+    if full:
+        grand = payout_micros(rnd.stake_micros, HS.GRAND_MULT * HS._scale)
+        st["collected"] += grand
+        await _pay(session, house, wallet, grand, "holdspin_spin", rnd.id,
+                   f"hs:{rnd.id}:grand")
+    if full or st["respins"] <= 0:
+        rnd.status = "settled"
+        rnd.outcome = "grand" if full else "feature_done"
+        rnd.payout_micros = st["collected"]
+        rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _hs_public(rnd, st, {"coins": new, "win": str(from_micros(win)),
+                                "grand": str(from_micros(grand)),
+                                "balance": str(from_micros(balance))})
+
+
+@router.get("/holdspin/active")
+async def holdspin_active(user: User = Depends(current_user),
+                          session: AsyncSession = Depends(get_session)):
+    rnd = await _hs_open(session, user.id)
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _hs_public(rnd, json.loads(rnd.detail))}
 
 
 # ----------------------------------------------------------- video slots ----

@@ -139,6 +139,16 @@ export interface VSlotDef {
   buy_cost?: number;
 }
 
+export interface HoldSpinState {
+  round_id: number; status: string;
+  locked: Record<string, string>; respins: number;
+  stake: string; collected: string;
+}
+
+export interface HoldSpinDef {
+  trigger: number; respins: number; grand: string; faces: string[];
+}
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -202,7 +212,8 @@ export const api = {
   casinoLobby: () =>
     request<{ games: { key: string; name: string; icon: string; category: string;
                        min: string; max: string; edge: string; rules: string;
-                       slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef }[] }>(
+                       slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef;
+                       holdspin?: HoldSpinDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -260,6 +271,16 @@ export const api = {
               scatters: number; mult: number; win: string;
               free_spins_left: number; bonus_total: string; balance: string }>(
       "/api/casino/vslots/spin", { method: "POST", body: JSON.stringify({ machine, stake }) }),
+  holdspinSpin: (stake: string) =>
+    request<HoldSpinState & { coins: Record<string, string>; win: string;
+              triggered: boolean; balance: string }>(
+      "/api/casino/holdspin/spin", { method: "POST", body: JSON.stringify({ stake }) }),
+  holdspinRespin: () =>
+    request<HoldSpinState & { coins: Record<string, string>; win: string;
+              grand: string; balance: string }>(
+      "/api/casino/holdspin/respin", { method: "POST" }),
+  holdspinActive: () =>
+    request<{ active: HoldSpinState | null }>("/api/casino/holdspin/active"),
   vslotBuy: (machine: string, stake: string) =>
     request<{ round_id: number; machine: string; cost: string;
               free_spins_left: number; mult: number; balance: string }>(

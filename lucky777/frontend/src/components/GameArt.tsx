@@ -339,7 +339,30 @@ const SLOT_THEMES: Record<string, { from: string; to: string; id: string; window
   "vslot:buffalo": { id: "vb", from: "#3a1d06", to: "#140a02", window: ["buffalo", "wild", "eagle"] },
 };
 
+function PiggyArt() {
+  const coin = (x: number, y: number, v: string) => (
+    <g key={`${x}${y}`}>
+      <circle cx={x} cy={y} r="13" fill="url(#pg-gold)" stroke="#a16207" strokeWidth="1.5" />
+      <text x={x} y={y + 4} fontSize="10" fontWeight="900" textAnchor="middle"
+        fill="#422006" fontFamily="Arial Black, sans-serif">{v}</text>
+    </g>
+  );
+  return (
+    <Frame id="pg" from="#3a1030" to="#140312">
+      <text x="160" y="80" fontSize="56" textAnchor="middle">🐷</text>
+      {coin(60, 40, "2x")}
+      {coin(250, 34, "5x")}
+      {coin(90, 100, "1x")}
+      {coin(232, 96, "10x")}
+      {coin(285, 70, "3x")}
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#pg-gold)" fontFamily="Arial Black, sans-serif">HOLD & SPIN</text>
+    </Frame>
+  );
+}
+
 export default function GameArt({ k }: { k: string }) {
+  if (k === "holdspin") return <PiggyArt />;
   if (k === "blackjack") return <BlackjackArt />;
   if (k === "roulette") return <RouletteArt />;
   if (k === "videopoker") return <VideoPokerArt />;

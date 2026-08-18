@@ -1680,7 +1680,7 @@ async def performance_report(window: str = "today", action: str = "all",
     """
     since, until = _window_range(window)
     ref_types = (("sports_bet", "race_bet") if action == "sportsbook"
-                 else ("duel_round", "dice_roll", "wheel_spin", "slot_spin", "vslot_spin", "roulette_spin", "vp_hand", "baccarat_coup", "mines_round", "crash_round", "plinko_drop",
+                 else ("duel_round", "dice_roll", "wheel_spin", "slot_spin", "vslot_spin", "holdspin_spin", "roulette_spin", "vp_hand", "baccarat_coup", "mines_round", "crash_round", "plinko_drop",
                        "blackjack_hand") if action == "casino" else None)
 
     scope = await _scope_ids(session, agent)
