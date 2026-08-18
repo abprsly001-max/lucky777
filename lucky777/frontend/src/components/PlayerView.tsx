@@ -443,6 +443,12 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
                 : null;
             })()}
             {game === "crash" && <Crash onBalance={onBalance} onPlayed={load} />}
+            {game === "dragon" && (() => {
+              const def = lobby?.games.find((g) => g.key === "dragon");
+              return def?.dragon
+                ? <GoldenDragon def={def.dragon} onBalance={onBalance} onPlayed={load} />
+                : null;
+            })()}
             {game === "holdspin" && (() => {
               const def = lobby?.games.find((g) => g.key === "holdspin");
               return def?.holdspin
@@ -818,6 +824,205 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         Every coin pays its printed value instantly. Land {def.trigger}+ coins to lock
         them and start {def.respins} respins — any new coin resets the counter.
         Fill the grid for the {def.grand}× Grand on top.
+      </p>
+    </div>
+  );
+}
+
+// --------------------------------------------------------- golden dragon ----
+const DR_TIERS: [string, string, string][] = [
+  // key, label, chip color classes
+  ["mini", "MINI", "from-emerald-400 to-emerald-600"],
+  ["minor", "MINOR", "from-sky-400 to-sky-600"],
+  ["major", "MAJOR", "from-violet-400 to-violet-600"],
+  ["maxi", "MAXI", "from-rose-400 to-rose-600"],
+  ["super", "SUPER", "from-orange-400 to-red-600"],
+];
+
+function GoldenDragon({ def, onBalance, onPlayed }: {
+  def: import("../api").DragonDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [locked, setLocked] = useState<Record<string, string>>({});
+  const [fresh, setFresh] = useState<Set<number>>(new Set());
+  const [respins, setRespins] = useState(0);
+  const [inFeature, setInFeature] = useState(false);
+  const [collected, setCollected] = useState("0");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [spinCells, setSpinCells] = useState(false);
+  const [hitTier, setHitTier] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.dragonActive().then((r) => {
+      if (r.active) {
+        setLocked(r.active.locked); setRespins(r.active.respins);
+        setCollected(r.active.collected); setInFeature(true);
+        setStake(String(Number(r.active.stake)));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const bet = Number(stake) || 0;
+  const isTier = (v: string) => (def.jackpots as Record<string, string>)[v] !== undefined;
+  const coinPay = (v: string) => (isTier(v) ? Number(def.jackpots[v]) : Number(v)) * bet;
+
+  async function run(kind: "spin" | "respin" | "buy") {
+    setErr(""); setBusy(true); setMsg(null); setSpinCells(true);
+    setFresh(new Set()); setHitTier(null);
+    try {
+      const r = kind === "spin" ? await api.dragonSpin(stake)
+        : kind === "buy" ? await api.dragonBuy(stake)
+        : await api.dragonRespin();
+      await new Promise((res) => setTimeout(res, 700));
+      setSpinCells(false);
+      setLocked(r.locked);
+      setFresh(new Set(Object.keys(r.coins).map(Number)));
+      setRespins(r.respins);
+      setCollected(r.collected);
+      onBalance(r.balance);
+      onPlayed();
+      const tiers = Object.values(r.coins).filter(isTier);
+      if (tiers.length) setHitTier(tiers[tiers.length - 1]);
+      const grand = (r as any).grand && Number((r as any).grand) > 0;
+      if (kind !== "respin" && (r as any).triggered) {
+        setInFeature(true);
+        setMsg(tiers.length
+          ? `🐉 ${tiers.map((t) => t.toUpperCase()).join(" + ")} JACKPOT! Coins locked`
+          : `🐉 HOLD & WIN! ${Object.keys(r.locked).length} coins locked`);
+      } else if (r.status === "settled") {
+        setInFeature(false);
+        if (grand) setMsg(`🔥 FULL GRID — GRAND ${def.grand}× +${money((r as any).grand)}! Total ${money(r.collected)}`);
+        else if (kind === "respin") setMsg(`Feature over — collected ${money(r.collected)}`);
+        else if (tiers.length) setMsg(`💥 ${tiers.map((t) => t.toUpperCase()).join(" + ")} JACKPOT — paid ${money(r.win)}`);
+        else if (Number(r.win) > 0) setMsg(`Coins paid ${money(r.win)}`);
+      } else if (kind === "respin" && Number(r.win) > 0) {
+        setMsg(tiers.length
+          ? `💥 ${tiers.map((t) => t.toUpperCase()).join(" + ")} JACKPOT +${money(r.win)} — respins reset`
+          : `+${money(r.win)} — respins reset`);
+      }
+    } catch (e: any) {
+      setSpinCells(false); setErr(e.message);
+    } finally { setBusy(false); }
+  }
+
+  const filled = Object.keys(locked).length;
+  const fmt = (n: number) =>
+    n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : n >= 10 ? n.toFixed(0) : n.toFixed(2);
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🐉 Golden Dragon Inferno</h3>
+        <span className="font-mono text-[10px] text-slate-500">Hold & Win</span>
+      </div>
+
+      {/* the jackpot ladder */}
+      <div className="mb-2 grid grid-cols-6 gap-1">
+        {DR_TIERS.map(([key, label, grad]) => (
+          <div key={key}
+            className={`rounded-md border px-1 py-1 text-center transition ${
+              hitTier === key
+                ? "reel-pop border-gold bg-gold/20 shadow-gold"
+                : "border-white/10 bg-base-900/70"}`}>
+            <div className={`bg-gradient-to-b ${grad} bg-clip-text text-[8px] font-black tracking-widest text-transparent`}>
+              {label}
+            </div>
+            <div className="font-mono text-[10px] font-bold text-slate-100">
+              {fmt(Number(def.jackpots[key]) * bet)}
+            </div>
+          </div>
+        ))}
+        <div className="rounded-md border border-gold/60 bg-gradient-to-b from-gold/25 to-amber-950/60 px-1 py-1 text-center shadow-gold">
+          <div className="bg-gradient-to-b from-yellow-200 to-amber-500 bg-clip-text text-[8px] font-black tracking-widest text-transparent">
+            GRAND
+          </div>
+          <div className="font-mono text-[10px] font-black text-gold">
+            {fmt(Number(def.grand) * bet)}
+          </div>
+        </div>
+      </div>
+
+      {inFeature && (
+        <div className="mb-2 flex items-center justify-between rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-bold text-gold">
+          <span>HOLD & WIN · {filled}/15 · {respins} respin{respins !== 1 ? "s" : ""} left</span>
+          <span className="font-mono">{money(collected)}</span>
+        </div>
+      )}
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">
+          {msg}
+        </div>
+      )}
+
+      {/* the inferno grid */}
+      <div className="rounded-xl border border-red-600/40 bg-gradient-to-b from-[#3d0a04] via-[#1c0402] to-black p-3">
+        <div className="grid grid-cols-5 gap-1.5">
+          {Array.from({ length: 15 }, (_, i) => {
+            const v = locked[String(i)];
+            const tier = v && isTier(v) ? DR_TIERS.find(([k]) => k === v) : null;
+            return (
+              <div key={i}
+                className={`grid aspect-square place-items-center rounded-md border transition ${
+                  v ? (fresh.has(i)
+                        ? "reel-pop border-gold bg-gradient-to-b from-gold/30 to-red-950/60 shadow-gold"
+                        : "border-gold/50 bg-gradient-to-b from-gold/15 to-base-900")
+                    : spinCells ? "animate-pulse border-white/10 bg-base-900"
+                    : "border-white/10 bg-base-900/80"}`}>
+                {v ? (
+                  tier ? (
+                    <span className={`grid h-10 w-10 place-items-center rounded-full bg-gradient-to-b ${tier[2]} border border-white/40 font-sans text-[8px] font-black tracking-wide text-white drop-shadow`}>
+                      {tier[1]}
+                    </span>
+                  ) : (
+                    <span className="grid h-9 w-9 place-items-center rounded-full btn-gold font-mono text-[10px] font-black text-base-900">
+                      {fmt(coinPay(v))}
+                    </span>
+                  )
+                ) : (
+                  <span className="text-lg opacity-20">🐉</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)}
+            disabled={busy || inFeature}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        {inFeature ? (
+          <button onClick={() => run("respin")} disabled={busy}
+            className="ml-auto animate-pulse rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+            Respin ({respins})
+          </button>
+        ) : (
+          <>
+            <button onClick={() => run("buy")} disabled={busy}
+              className="ml-auto rounded-lg border border-gold/50 bg-base-900 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-gold hover:bg-base-700 disabled:opacity-50">
+              Buy Bonus · {money(String(Number(def.buy_cost) * bet))}
+            </button>
+            <button onClick={() => run("spin")} disabled={busy}
+              className="rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
+              Spin
+            </button>
+          </>
+        )}
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        Fortune coins pay the moment they land — cash coins pay their printed
+        value, jackpot coins pay the ladder. Land {def.trigger}+ coins to lock
+        them and start {def.respins} respins; any new coin resets the counter.
+        Fill all 15 for the {def.grand}× GRAND on top. Buy Bonus guarantees the
+        trigger.
       </p>
     </div>
   );

@@ -149,6 +149,11 @@ export interface HoldSpinDef {
   trigger: number; respins: number; grand: string; faces: string[];
 }
 
+export interface DragonDef {
+  trigger: number; respins: number; grand: string; faces: string[];
+  jackpots: Record<string, string>; buy_cost: string;
+}
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -213,7 +218,7 @@ export const api = {
     request<{ games: { key: string; name: string; icon: string; category: string;
                        min: string; max: string; edge: string; rules: string;
                        slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef;
-                       holdspin?: HoldSpinDef }[] }>(
+                       holdspin?: HoldSpinDef; dragon?: DragonDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -281,6 +286,20 @@ export const api = {
       "/api/casino/holdspin/respin", { method: "POST" }),
   holdspinActive: () =>
     request<{ active: HoldSpinState | null }>("/api/casino/holdspin/active"),
+  dragonSpin: (stake: string) =>
+    request<HoldSpinState & { coins: Record<string, string>; win: string;
+              triggered: boolean; balance: string }>(
+      "/api/casino/dragon/spin", { method: "POST", body: JSON.stringify({ stake }) }),
+  dragonBuy: (stake: string) =>
+    request<HoldSpinState & { coins: Record<string, string>; win: string;
+              triggered: boolean; cost: string; balance: string }>(
+      "/api/casino/dragon/buy", { method: "POST", body: JSON.stringify({ stake }) }),
+  dragonRespin: () =>
+    request<HoldSpinState & { coins: Record<string, string>; win: string;
+              grand: string; balance: string }>(
+      "/api/casino/dragon/respin", { method: "POST" }),
+  dragonActive: () =>
+    request<{ active: HoldSpinState | null }>("/api/casino/dragon/active"),
   vslotBuy: (machine: string, stake: string) =>
     request<{ round_id: number; machine: string; cost: string;
               free_spins_left: number; mult: number; balance: string }>(

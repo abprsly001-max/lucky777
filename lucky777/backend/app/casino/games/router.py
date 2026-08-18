@@ -83,6 +83,25 @@ def _holdspin_entry(mn: str, mx: str) -> list[dict]:
     }]
 
 
+def _dragon_entry(mn: str, mx: str) -> list[dict]:
+    from . import dragon as DR
+    return [{
+        "key": "dragon", "name": "Golden Dragon Inferno", "icon": "🐉",
+        "category": "slots", "min": mn, "max": mx,
+        "rules": "Fortune coins pay the moment they land — some carry a "
+                 "jackpot from the ladder. Six or more locks them in and "
+                 "starts 3 respins; every new coin resets the count. Fill "
+                 "all 15 for the GRAND on top.",
+        "dragon": {
+            "trigger": DR.TRIGGER, "respins": DR.RESPINS,
+            "jackpots": {t: str(v) for t, v in DR.JACKPOTS.items()},
+            "grand": str(DR.GRAND_MULT),
+            "faces": [str(v) for v, _ in DR.scaled_coin_values()],
+            "buy_cost": str(DR.buy_cost_mult()),
+        },
+    }]
+
+
 def _vslot_entries(mn: str, mx: str) -> list[dict]:
     from . import videoslots as VS
     out = []
@@ -133,7 +152,8 @@ async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
     mx = settings.max_bet_credits
     return {
-        "games": _holdspin_entry(settings.min_bet_credits, mx)
+        "games": _dragon_entry(settings.min_bet_credits, mx)
+                 + _holdspin_entry(settings.min_bet_credits, mx)
                  + _vslot_entries(settings.min_bet_credits, mx)
                  + _slot_entries(settings.min_bet_credits, mx) + [
             {"key": "roulette", "name": "Roulette", "icon": "🎯", "category": "table",
@@ -821,6 +841,154 @@ async def holdspin_active(user: User = Depends(current_user),
     if rnd is None:
         return {"active": None}
     return {"active": _hs_public(rnd, json.loads(rnd.detail))}
+
+
+# -------------------------------------------------------- golden dragon ----
+async def _dr_open(session, user_id: int):
+    return (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user_id,
+                                  CasinoRound.game == "dragon",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+
+
+def _dr_public(rnd, st, extra=None):
+    out = {"round_id": rnd.id, "status": rnd.status,
+           "locked": st["locked"], "respins": st["respins"],
+           "stake": str(from_micros(rnd.stake_micros)),
+           "collected": str(from_micros(st["collected"]))}
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _dr_coin_win(stake_m: int, coins: dict) -> int:
+    from . import dragon as DR
+    return sum(payout_micros(stake_m, DR.coin_multiplier(v))
+               for v in coins.values())
+
+
+async def _dr_start(session, user, stake_m, spin, charge_m, tag, key):
+    """Shared open-a-round path for a paid spin and a bonus buy."""
+    from . import dragon as DR
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    b = spin(pair.server_seed, pair.client_seed, nonce)
+    win = _dr_coin_win(stake_m, b.coins)
+
+    st = {"locked": {str(c): v for c, v in b.coins.items()},
+          "respins": DR.RESPINS, "collected": win}
+    rnd = CasinoRound(game="dragon", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m,
+                      status="open" if b.triggered else "settled",
+                      outcome="feature" if b.triggered
+                              else ("win" if win > 0 else "lose"),
+                      payout_micros=None if b.triggered else win,
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    wallet, house = await _charge(session, user, charge_m, "dragon_spin",
+                                  rnd.id, f"dr:{rnd.id}:{tag}:{key}")
+    await _pay(session, house, wallet, win, "dragon_spin", rnd.id,
+               f"dr:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _dr_public(rnd, st, {"coins": b.coins, "win": str(from_micros(win)),
+                                "triggered": b.triggered,
+                                "balance": str(from_micros(balance))})
+
+
+@router.post("/dragon/spin")
+async def dragon_spin(req: HoldSpinReq, user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import dragon as DR
+    _casino_gate(user)
+    if await _dr_open(session, user.id):
+        raise HTTPException(409, "finish your respins first")
+    stake_m = _stake_or_400(req.stake, user)
+    key = req.idempotency_key or secrets.token_hex(8)
+    return await _dr_start(session, user, stake_m, DR.base_spin,
+                           stake_m, "place", key)
+
+
+@router.post("/dragon/buy")
+async def dragon_buy(req: HoldSpinReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    """Buy Bonus: pay the printed multiple of your bet, the trigger is
+    guaranteed. Priced off the exact feature EV -- house keeps its cut."""
+    from . import dragon as DR
+    _casino_gate(user)
+    if await _dr_open(session, user.id):
+        raise HTTPException(409, "finish your respins first")
+    stake_m = _stake_or_400(req.stake, user)
+    total = payout_micros(stake_m, DR.buy_cost_mult())
+    cap = (user.wager_limit_micros or to_micros(Decimal(settings.max_bet_credits)))
+    if total > cap:
+        raise HTTPException(400,
+            f"that buy costs {DR.buy_cost_mult()}x your bet — over your "
+            f"wager limit; lower the bet")
+    key = req.idempotency_key or secrets.token_hex(8)
+    out = await _dr_start(session, user, stake_m, DR.buy_spin,
+                          total, "buy", key)
+    out["cost"] = str(from_micros(total))
+    return out
+
+
+@router.post("/dragon/respin")
+async def dragon_respin(user: User = Depends(betting_user),
+                        session: AsyncSession = Depends(get_session)):
+    from . import dragon as DR
+    rnd = await _dr_open(session, user.id)
+    if rnd is None:
+        raise HTTPException(404, "no feature in play")
+    st = json.loads(rnd.detail)
+    locked_cells = [int(c) for c in st["locked"]]
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    new = DR.respin(pair.server_seed, pair.client_seed, nonce, locked_cells)
+    win = _dr_coin_win(rnd.stake_micros, new)
+
+    for c, v in new.items():
+        st["locked"][str(c)] = v
+    if new:
+        st["respins"] = DR.RESPINS
+    else:
+        st["respins"] -= 1
+    st["collected"] += win
+
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, win, "dragon_spin", rnd.id,
+               f"dr:{rnd.id}:rs:{nonce}")
+
+    grand = 0
+    full = len(st["locked"]) >= DR.CELLS
+    if full:
+        grand = payout_micros(rnd.stake_micros, DR.GRAND_MULT)
+        st["collected"] += grand
+        await _pay(session, house, wallet, grand, "dragon_spin", rnd.id,
+                   f"dr:{rnd.id}:grand")
+    if full or st["respins"] <= 0:
+        rnd.status = "settled"
+        rnd.outcome = "grand" if full else "feature_done"
+        rnd.payout_micros = st["collected"]
+        rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _dr_public(rnd, st, {"coins": new, "win": str(from_micros(win)),
+                                "grand": str(from_micros(grand)),
+                                "balance": str(from_micros(balance))})
+
+
+@router.get("/dragon/active")
+async def dragon_active(user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    rnd = await _dr_open(session, user.id)
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _dr_public(rnd, json.loads(rnd.detail))}
 
 
 # ----------------------------------------------------------- video slots ----

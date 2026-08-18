@@ -361,7 +361,32 @@ function PiggyArt() {
   );
 }
 
+function DragonArt() {
+  const coin = (x: number, y: number, v: string, r = 12) => (
+    <g key={`${x}${y}`}>
+      <circle cx={x} cy={y} r={r} fill="url(#dg-gold)" stroke="#7c2d12" strokeWidth="1.5" />
+      <text x={x} y={y + 3.5} fontSize={r * 0.62} fontWeight="900" textAnchor="middle"
+        fill="#431407" fontFamily="Arial Black, sans-serif">{v}</text>
+    </g>
+  );
+  return (
+    <Frame id="dg" from="#4a0904" to="#190201">
+      <text x="160" y="82" fontSize="58" textAnchor="middle">🐉</text>
+      {coin(52, 38, "MINI")}
+      {coin(258, 32, "MAXI", 14)}
+      {coin(86, 100, "88")}
+      {coin(236, 98, "MAJOR", 13)}
+      {coin(290, 68, "8")}
+      <text x="160" y="24" fontSize="12" fontWeight="900" textAnchor="middle"
+        fill="url(#dg-gold)" fontFamily="Arial Black, sans-serif">GRAND 2000x</text>
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#dg-gold)" fontFamily="Arial Black, sans-serif">HOLD & WIN</text>
+    </Frame>
+  );
+}
+
 export default function GameArt({ k }: { k: string }) {
+  if (k === "dragon") return <DragonArt />;
   if (k === "holdspin") return <PiggyArt />;
   if (k === "blackjack") return <BlackjackArt />;
   if (k === "roulette") return <RouletteArt />;
