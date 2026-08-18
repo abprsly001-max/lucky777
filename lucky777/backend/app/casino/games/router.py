@@ -66,6 +66,28 @@ async def _pay(session, house, wallet, amount, ref_type, ref_id, key):
             ref_type=ref_type, ref_id=ref_id)
 
 
+def _vslot_entries(mn: str, mx: str) -> list[dict]:
+    from . import videoslots as VS
+    out = []
+    for key, m in VS.VIDEO_SLOTS.items():
+        fs = m["free_spins"]
+        out.append({
+            "key": f"vslot:{key}", "name": m["name"], "icon": "🎰",
+            "category": "slots", "min": mn, "max": mx,
+            "rules": m["tagline"] + f" 5 reels, 20 lines. {fs['trigger']}+ scatters "
+                     f"award {fs['count']} free spins at {fs['mult']}x.",
+            "vslot": {
+                "machine": key,
+                "symbols": [k for k, _, _ in m["symbols"]],
+                "pays": {k: {str(n): str(v) for n, v in p.items()}
+                         for k, _, p in m["symbols"] if p},
+                "free_spins": fs,
+                "lines": len(VS.LINES),
+            },
+        })
+    return out
+
+
 def _slot_entries(mn: str, mx: str) -> list[dict]:
     out = []
     for key, m in E.SLOT_MACHINES.items():
@@ -93,7 +115,8 @@ async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
     mx = settings.max_bet_credits
     return {
-        "games": _slot_entries(settings.min_bet_credits, mx) + [
+        "games": _vslot_entries(settings.min_bet_credits, mx)
+                 + _slot_entries(settings.min_bet_credits, mx) + [
             {"key": "roulette", "name": "Roulette", "icon": "🎯", "category": "table",
              "min": settings.min_bet_credits, "max": mx,
              "rules": "European single-zero wheel. Straight up pays 35:1, "
@@ -661,6 +684,113 @@ async def plinko_drop(req: PlinkoRequest, user: User = Depends(betting_user),
             "multiplier": str(out.multiplier),
             "payout": str(from_micros(payout)),
             "balance": str(from_micros(balance))}
+
+
+# ----------------------------------------------------------- video slots ----
+class VSlotRequest(BaseModel):
+    stake: str
+    machine: str
+    idempotency_key: str | None = None
+
+
+@router.post("/vslots/spin")
+async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import videoslots as VS
+    _casino_gate(user)
+    if req.machine not in VS.VIDEO_SLOTS:
+        raise HTTPException(404, "no such machine")
+    m = VS.VIDEO_SLOTS[req.machine]
+    fs_conf = m["free_spins"]
+
+    open_rnd = (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user.id,
+                                  CasinoRound.game == "vslot",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+
+    if open_rnd is not None:
+        # a FREE spin: no charge, wins ride the bonus multiplier
+        st = json.loads(open_rnd.detail)
+        if st["machine"] != req.machine:
+            raise HTTPException(409,
+                f"finish your bonus on {VS.VIDEO_SLOTS[st['machine']]['name']} first")
+        out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine)
+        line_bet = open_rnd.stake_micros // 20
+        win = payout_micros(line_bet, out.total_pay * fs_conf["mult"])
+        st["spins_left"] -= 1
+        st["total_win"] += win
+        wallet = await ledger.wallet_for(session, user.id)
+        house = await ledger.house_account(session)
+        await _pay(session, house, wallet, win, "vslot_spin", open_rnd.id,
+                   f"vs:{open_rnd.id}:fs:{st['spins_left']}")
+        free_left = st["spins_left"]
+        if free_left <= 0:
+            open_rnd.status = "settled"
+            open_rnd.outcome = "bonus_done"
+            open_rnd.payout_micros = st["total_win"]
+            open_rnd.settled_at = datetime.now(timezone.utc)
+        open_rnd.detail = json.dumps(st)
+        balance = await ledger.balance_of(session, wallet.id)
+        await session.commit()
+        return {"round_id": open_rnd.id, "free_spin": True,
+                "grid": out.grid, "line_wins": out.line_wins,
+                "scatters": out.scatters, "mult": fs_conf["mult"],
+                "win": str(from_micros(win)), "free_spins_left": free_left,
+                "bonus_total": str(from_micros(st["total_win"])),
+                "balance": str(from_micros(balance))}
+
+    # a PAID spin
+    stake_m = _stake_or_400(req.stake, user)
+    out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine)
+    line_bet = stake_m // 20
+    win = payout_micros(line_bet, out.total_pay)
+
+    rnd = CasinoRound(game="vslot", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m,
+                      status="open" if out.triggered else "settled",
+                      outcome="bonus" if out.triggered
+                              else ("win" if win > 0 else "lose"),
+                      payout_micros=None if out.triggered else win,
+                      detail=json.dumps({"machine": req.machine,
+                                         "spins_left": fs_conf["count"] if out.triggered else 0,
+                                         "total_win": win}))
+    session.add(rnd)
+    await session.flush()
+
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "vslot_spin", rnd.id,
+                                  f"vs:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "vslot_spin", rnd.id,
+               f"vs:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "free_spin": False,
+            "grid": out.grid, "line_wins": out.line_wins,
+            "scatters": out.scatters, "mult": 1,
+            "win": str(from_micros(win)),
+            "free_spins_left": fs_conf["count"] if out.triggered else 0,
+            "bonus_total": "0",
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/vslots/active")
+async def vslot_active(user: User = Depends(current_user),
+                       session: AsyncSession = Depends(get_session)):
+    rnd = (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user.id,
+                                  CasinoRound.game == "vslot",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    return {"active": {"round_id": rnd.id, "machine": st["machine"],
+                       "free_spins_left": st["spins_left"],
+                       "bonus_total": str(from_micros(st["total_win"])),
+                       "stake": str(from_micros(rnd.stake_micros))}}
 
 
 # ------------------------------------------------------------------ mines ----

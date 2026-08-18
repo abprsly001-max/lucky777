@@ -19,6 +19,19 @@ export const SYMBOL_GLYPH: Record<string, { g: string; cls?: string }> = {
   horseshoe: { g: "Ω", cls: "slot-gold" },
   star: { g: "⭐" },
   moon: { g: "🌙" },
+  wild: { g: "W", cls: "slot-gold" },
+  scatter: { g: "⭐" },
+  bar3: { g: "BAR", cls: "slot-bar" },
+  mask: { g: "🗿" },
+  jaguar: { g: "🐆" },
+  snake: { g: "🐍" },
+  idol: { g: "🏺" },
+  berry: { g: "🍓" },
+  plum: { g: "🍑" },
+  A: { g: "A", cls: "slot-gold" },
+  K: { g: "K", cls: "slot-gold" },
+  Q: { g: "Q", cls: "slot-gold" },
+  J: { g: "J", cls: "slot-gold" },
 };
 
 function Defs({ id, from, to }: { id: string; from: string; to: string }) {
@@ -306,6 +319,9 @@ const SLOT_THEMES: Record<string, { from: string; to: string; id: string; window
   "slot:fruitfrenzy": { id: "sf", from: "#3f1206", to: "#160602", window: ["cherry", "melon", "lemon"] },
   "slot:diamondriches": { id: "sd", from: "#0c2740", to: "#040e18", window: ["diamond", "crown", "diamond"] },
   "slot:luckyclover": { id: "sc", from: "#0d3311", to: "#041305", window: ["clover", "horseshoe", "clover"] },
+  "vslot:golden7s": { id: "vg", from: "#3a2606", to: "#140d02", window: ["seven", "wild", "seven"] },
+  "vslot:aztec": { id: "va", from: "#2d3a06", to: "#0e1402", window: ["mask", "scatter", "jaguar"] },
+  "vslot:fruitblitz": { id: "vf", from: "#3f0642", to: "#160217", window: ["berry", "wild", "melon"] },
 };
 
 export default function GameArt({ k }: { k: string }) {

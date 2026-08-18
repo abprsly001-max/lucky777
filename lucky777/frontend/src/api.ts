@@ -130,6 +130,14 @@ export interface SlotDef {
   partial: { symbol: string; two: string; one: string } | null;
 }
 
+export interface VSlotDef {
+  machine: string;
+  symbols: string[];
+  pays: Record<string, Record<string, string>>;
+  free_spins: { trigger: number; count: number; mult: number };
+  lines: number;
+}
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -193,7 +201,7 @@ export const api = {
   casinoLobby: () =>
     request<{ games: { key: string; name: string; icon: string; category: string;
                        min: string; max: string; edge: string; rules: string;
-                       slot?: SlotDef; plinko?: PlinkoDef }[] }>(
+                       slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -245,6 +253,16 @@ export const api = {
   crashActive: () =>
     request<{ active: { round_id: number; rate: number; started_at: string;
                         stake: string } | null }>("/api/casino/crash/active"),
+  vslotSpin: (machine: string, stake: string) =>
+    request<{ round_id: number; free_spin: boolean; grid: string[][];
+              line_wins: { line: number; symbol: string; count: number; pay: string }[];
+              scatters: number; mult: number; win: string;
+              free_spins_left: number; bonus_total: string; balance: string }>(
+      "/api/casino/vslots/spin", { method: "POST", body: JSON.stringify({ machine, stake }) }),
+  vslotActive: () =>
+    request<{ active: { round_id: number; machine: string; free_spins_left: number;
+                        bonus_total: string; stake: string } | null }>(
+      "/api/casino/vslots/active"),
   slotSpin: (machine: string, stake: string) =>
     request<{ round_id: number; nonce: number; machine: string; reels: string[];
               multiplier: string; win: boolean; payout: string; balance: string }>(
