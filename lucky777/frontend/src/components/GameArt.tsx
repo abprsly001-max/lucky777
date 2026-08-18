@@ -112,67 +112,8 @@ function BlackjackArt() {
   );
 }
 
-function DuelArt() {
-  const blade = (flip: boolean) => (
-    <g transform={flip ? "translate(320 0) scale(-1 1)" : undefined}>
-      <polygon points="70,108 178,34 190,22 196,28 184,40 92,124" fill="#cbd5e1" />
-      <polygon points="70,108 178,34 174,30 66,104" fill="#f8fafc" />
-      <rect x="76" y="98" width="34" height="9" rx="4" transform="rotate(-38 93 102)" fill="url(#duel-gold)" />
-      <circle cx="66" cy="116" r="7" fill="url(#duel-gold)" />
-    </g>
-  );
-  return (
-    <Frame id="duel" from="#3b1220" to="#12060c">
-      <circle cx="160" cy="64" r="44" fill="rgba(240,180,41,0.10)" />
-      <circle cx="160" cy="64" r="44" fill="none" stroke="rgba(240,180,41,0.35)" strokeWidth="1.5" />
-      {blade(false)}
-      {blade(true)}
-      <circle cx="160" cy="66" r="5" fill="#f0b429" />
-    </Frame>
-  );
-}
 
-function DiceArt() {
-  const pip = (x: number, y: number) => <circle cx={x} cy={y} r="4.6" fill="#1e1b4b" />;
-  return (
-    <Frame id="dice" from="#1e1b4b" to="#0b0a26">
-      <ellipse cx="160" cy="126" rx="150" ry="26" fill="rgba(0,0,0,0.5)" />
-      <g transform="rotate(-14 120 70)">
-        <rect x="86" y="38" width="62" height="62" rx="12" fill="#f8fafc" stroke="#cbd5e1" />
-        {pip(103, 55)}{pip(117, 69)}{pip(131, 83)}
-      </g>
-      <g transform="rotate(11 208 74)">
-        <rect x="176" y="42" width="62" height="62" rx="12" fill="url(#dice-gold)" stroke="#a16207" />
-        <circle cx="192" cy="58" r="4.6" fill="#422006" /><circle cx="222" cy="58" r="4.6" fill="#422006" />
-        <circle cx="192" cy="88" r="4.6" fill="#422006" /><circle cx="222" cy="88" r="4.6" fill="#422006" />
-        <circle cx="207" cy="73" r="4.6" fill="#422006" />
-      </g>
-    </Frame>
-  );
-}
 
-function WheelArt() {
-  const segs = 12;
-  const colors = ["#f0b429", "#243044", "#4ade80", "#243044", "#38bdf8", "#243044"];
-  const paths = Array.from({ length: segs }, (_, i) => {
-    const a0 = (i / segs) * 2 * Math.PI - Math.PI / 2;
-    const a1 = ((i + 1) / segs) * 2 * Math.PI - Math.PI / 2;
-    const x0 = 160 + 58 * Math.cos(a0), y0 = 78 + 58 * Math.sin(a0);
-    const x1 = 160 + 58 * Math.cos(a1), y1 = 78 + 58 * Math.sin(a1);
-    return (
-      <path key={i} d={`M160 78 L${x0} ${y0} A58 58 0 0 1 ${x1} ${y1} Z`}
-        fill={colors[i % colors.length]} stroke="#0b0e14" strokeWidth="1.5" />
-    );
-  });
-  return (
-    <Frame id="wheel" from="#082f2a" to="#03110f">
-      {paths}
-      <circle cx="160" cy="78" r="62" fill="none" stroke="url(#wheel-gold)" strokeWidth="4" />
-      <circle cx="160" cy="78" r="12" fill="url(#wheel-gold)" stroke="#0b0e14" strokeWidth="2" />
-      <polygon points="160,6 151,22 169,22" fill="#f0b429" stroke="#0b0e14" strokeWidth="1.5" />
-    </Frame>
-  );
-}
 
 function SlotArt({ theme, window: win }: {
   theme: { from: string; to: string; id: string };
@@ -220,111 +161,12 @@ function SlotArt({ theme, window: win }: {
 }
 
 
-function RouletteArt() {
-  const RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-  const order = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9];
-  const segs = order.map((n, i) => {
-    const a0 = (i / order.length) * 2 * Math.PI - Math.PI / 2;
-    const a1 = ((i + 1) / order.length) * 2 * Math.PI - Math.PI / 2;
-    const x0 = 160 + 56 * Math.cos(a0), y0 = 84 + 56 * Math.sin(a0);
-    const x1 = 160 + 56 * Math.cos(a1), y1 = 84 + 56 * Math.sin(a1);
-    const fill = n === 0 ? "#15803d" : RED.has(n) ? "#b91c1c" : "#111827";
-    return <path key={i} d={`M160 84 L${x0} ${y0} A56 56 0 0 1 ${x1} ${y1} Z`} fill={fill} stroke="#0b0e14" strokeWidth="1" />;
-  });
-  return (
-    <Frame id="rl" from="#14351f" to="#06130a">
-      {segs}
-      <circle cx="160" cy="84" r="60" fill="none" stroke="url(#rl-gold)" strokeWidth="4" />
-      <circle cx="160" cy="84" r="30" fill="#1a2130" stroke="url(#rl-gold)" strokeWidth="2" />
-      <circle cx="160" cy="84" r="6" fill="url(#rl-gold)" />
-      <circle cx="185" cy="42" r="5" fill="#f8fafc" stroke="#94a3b8" />
-    </Frame>
-  );
-}
-
-function VideoPokerArt() {
-  return (
-    <Frame id="vp" from="#1c2a4a" to="#0a101f">
-      <Card x={64} y={30} r={-8} label="A♠" />
-      <Card x={112} y={26} r={-3} label="K♥" red />
-      <Card x={160} y={25} r={2} label="Q♦" red />
-      <Card x={208} y={28} r={7} label="J♣" />
-      <rect x="120" y="100" width="80" height="18" rx="9" fill="url(#vp-gold)" />
-      <text x="160" y="113" fontSize="11" fontWeight="900" textAnchor="middle" fill="#0b0e14"
-        fontFamily="Arial, sans-serif">HOLD</text>
-    </Frame>
-  );
-}
-
-function BaccaratArt() {
-  return (
-    <Frame id="bc" from="#3d1a1a" to="#150707">
-      <ellipse cx="160" cy="150" rx="200" ry="76" fill="#5b1e1e" opacity="0.5" />
-      <path d="M 20 128 A 190 100 0 0 1 300 128" fill="none" stroke="url(#bc-gold)" strokeWidth="2" opacity="0.7" />
-      <Card x={84} y={34} r={-6} label="9♥" red />
-      <Card x={124} y={32} r={4} label="6♦" red />
-      <Card x={196} y={34} r={-4} label="8♠" />
-      <Card x={236} y={36} r={6} label="K♣" />
-      <text x="107" y="26" fontSize="11" fontWeight="800" textAnchor="middle" fill="#93c5fd"
-        fontFamily="Arial, sans-serif">PLAYER</text>
-      <text x="219" y="26" fontSize="11" fontWeight="800" textAnchor="middle" fill="#fca5a5"
-        fontFamily="Arial, sans-serif">BANKER</text>
-    </Frame>
-  );
-}
-
-function MinesArt() {
-  const cells = [];
-  for (let r = 0; r < 3; r++)
-    for (let c = 0; c < 5; c++) {
-      const x = 88 + c * 30, y = 24 + r * 30;
-      const kind = (r === 1 && c === 2) ? "bomb" : ((r + c) % 3 === 0 ? "gem" : "hidden");
-      cells.push(
-        <g key={`${r}-${c}`}>
-          <rect x={x} y={y} width="26" height="26" rx="6"
-            fill={kind === "hidden" ? "#243044" : "#0b0e14"}
-            stroke={kind === "gem" ? "rgba(74,222,128,0.6)" : kind === "bomb" ? "rgba(248,113,113,0.7)" : "rgba(255,255,255,0.08)"} />
-          {kind === "gem" && <text x={x + 13} y={y + 19} fontSize="14" textAnchor="middle">💎</text>}
-          {kind === "bomb" && <text x={x + 13} y={y + 19} fontSize="14" textAnchor="middle">💣</text>}
-        </g>
-      );
-    }
-  return <Frame id="mn" from="#252d3d" to="#0c101a">{cells}</Frame>;
-}
-
-function CrashArt() {
-  return (
-    <Frame id="cr" from="#231a3d" to="#0b0716">
-      <path d="M 24 116 Q 140 108 220 66 T 292 18" fill="none" stroke="#4ade80" strokeWidth="4" strokeLinecap="round" />
-      <path d="M 24 116 Q 140 108 220 66 T 292 18 L 292 116 Z" fill="rgba(74,222,128,0.10)" />
-      <text x="286" y="30" fontSize="20" textAnchor="middle">🚀</text>
-      <text x="70" y="46" fontSize="26" fontWeight="900" fill="url(#cr-gold)" fontFamily="Arial Black, sans-serif">2.47×</text>
-      {[40, 70, 100].map((y) => (
-        <line key={y} x1="24" y1={y} x2="296" y2={y} stroke="rgba(255,255,255,0.06)" />
-      ))}
-    </Frame>
-  );
-}
 
 
-function PlinkoArt() {
-  const pegs = [];
-  for (let r = 1; r <= 7; r++)
-    for (let i = 0; i <= r; i++)
-      pegs.push(<circle key={`${r}-${i}`} cx={160 + (i - r / 2) * 26} cy={10 + r * 13}
-        r="3" fill="#46536b" />);
-  const buckets = ["#f0b429", "#f59e0b", "#4ade80", "#334155", "#4ade80", "#f59e0b", "#f0b429"];
-  return (
-    <Frame id="pk" from="#182036" to="#0a0e18">
-      {pegs}
-      <circle cx="173" cy="55" r="6" fill="url(#pk-gold)" />
-      {buckets.map((c, i) => (
-        <rect key={i} x={62 + i * 28} y={108} width="25" height="12" rx="3"
-          fill="rgba(255,255,255,0.06)" stroke={c} strokeWidth="1.5" />
-      ))}
-    </Frame>
-  );
-}
+
+
+
+
 
 const SLOT_THEMES: Record<string, { from: string; to: string; id: string; window: [string, string, string] }> = {
   "slot:gold777": { id: "sg", from: "#3a2606", to: "#140d02", window: ["seven", "seven", "seven"] },
@@ -339,200 +181,210 @@ const SLOT_THEMES: Record<string, { from: string; to: string; id: string; window
   "vslot:buffalo": { id: "vb", from: "#3a1d06", to: "#140a02", window: ["buffalo", "wild", "eagle"] },
 };
 
-function PiggyArt() {
-  const coin = (x: number, y: number, v: string) => (
-    <g key={`${x}${y}`}>
-      <circle cx={x} cy={y} r="13" fill="url(#pg-gold)" stroke="#a16207" strokeWidth="1.5" />
-      <text x={x} y={y + 4} fontSize="10" fontWeight="900" textAnchor="middle"
-        fill="#422006" fontFamily="Arial Black, sans-serif">{v}</text>
-    </g>
-  );
-  return (
-    <Frame id="pg" from="#3a1030" to="#140312">
-      <text x="160" y="80" fontSize="56" textAnchor="middle">🐷</text>
-      {coin(60, 40, "2x")}
-      {coin(250, 34, "5x")}
-      {coin(90, 100, "1x")}
-      {coin(232, 96, "10x")}
-      {coin(285, 70, "3x")}
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#pg-gold)" fontFamily="Arial Black, sans-serif">HOLD & SPIN</text>
-    </Frame>
-  );
+
+
+
+
+
+
+
+
+
+
+/* ==================== the poster system ====================
+ * Every tile is a movie-poster lockup: themed backdrop, light rays, scene
+ * glyphs, a 3D extruded title in the game's colors, and the LUCKY777 badge.
+ * This is the whole lobby's face — treat it like packaging, not decoration.
+ */
+type PosterSpec = {
+  title: string;             // display name, auto-split onto 1-2 lines
+  bg: [string, string];      // backdrop gradient top -> bottom
+  ac: [string, string];      // title letter gradient light -> deep
+  g: [string, string?];      // scene glyphs: hero left, optional right
+  sub?: string;              // small tagline under the title
+};
+
+export const POSTERS: Record<string, PosterSpec> = {
+  tumble: { title: "Sugar Blast", bg: ["#4a0d54", "#12031c"], ac: ["#ffd6f2", "#e879f9"], g: ["🍭", "🍉"], sub: "TUMBLE WINS" },
+  dragon: { title: "Golden Dragon", bg: ["#5a0f06", "#180301"], ac: ["#ffe9a3", "#f59e0b"], g: ["🐉", "🪙"], sub: "HOLD & WIN · GRAND 2000x" },
+  holdspin: { title: "Piggy Blast", bg: ["#4a1140", "#160312"], ac: ["#ffc9de", "#f472b6"], g: ["🐷", "🪙"], sub: "HOLD & SPIN" },
+  "vslot:golden7s": { title: "Golden 7s", bg: ["#4a3106", "#140d02"], ac: ["#fff3c4", "#f0b429"], g: ["7️⃣", "🔔"], sub: "20 LINES · FREE SPINS" },
+  "vslot:aztec": { title: "Aztec Gold", bg: ["#1d4a10", "#071403"], ac: ["#d9f99d", "#65a30d"], g: ["🗿", "🐆"], sub: "20 LINES · FREE SPINS" },
+  "vslot:fruitblitz": { title: "Fruit Blitz", bg: ["#4a0650", "#150217"], ac: ["#fbcfe8", "#d946ef"], g: ["🍓", "🍒"], sub: "20 LINES · FREE SPINS" },
+  "vslot:reaper": { title: "Grim Fortune", bg: ["#241448", "#0a0517"], ac: ["#ddd6fe", "#8b5cf6"], g: ["💀", "🕯️"], sub: "20 LINES · FREE SPINS" },
+  "vslot:neonnights": { title: "Neon Nights", bg: ["#063a52", "#02111c"], ac: ["#a5f3fc", "#06b6d4"], g: ["🌅", "🌴"], sub: "20 LINES · FREE SPINS" },
+  "vslot:buffalo": { title: "Thunder Herd", bg: ["#4a2506", "#170b02"], ac: ["#fed7aa", "#ea580c"], g: ["🦬", "🦅"], sub: "20 LINES · FREE SPINS" },
+  "slot:gold777": { title: "Gold 777", bg: ["#4a3106", "#140d02"], ac: ["#fff3c4", "#f0b429"], g: ["🎰", "💰"], sub: "CLASSIC 3-REEL" },
+  "slot:fruitfrenzy": { title: "Fruit Frenzy", bg: ["#4f1507", "#180602"], ac: ["#fecaca", "#ef4444"], g: ["🍒", "🍋"], sub: "CLASSIC 3-REEL" },
+  "slot:diamondriches": { title: "Diamond Riches", bg: ["#0d3152", "#03101c"], ac: ["#bae6fd", "#38bdf8"], g: ["💎", "👑"], sub: "CLASSIC 3-REEL" },
+  "slot:luckyclover": { title: "Lucky Clover", bg: ["#0d401a", "#031407"], ac: ["#bbf7d0", "#22c55e"], g: ["🍀", "🌈"], sub: "CLASSIC 3-REEL" },
+  roulette: { title: "Roulette", bg: ["#123524", "#05130b"], ac: ["#fecaca", "#dc2626"], g: ["🎯", "🔴"], sub: "EUROPEAN SINGLE ZERO" },
+  videopoker: { title: "Video Poker", bg: ["#12274a", "#040b17"], ac: ["#bfdbfe", "#3b82f6"], g: ["🂡", "🃞"], sub: "JACKS OR BETTER" },
+  baccarat: { title: "Baccarat", bg: ["#3a0a2a", "#14030e"], ac: ["#fbcfe8", "#ec4899"], g: ["🀄", "🃏"], sub: "PUNTO BANCO" },
+  blackjack: { title: "Blackjack", bg: ["#123524", "#05130b"], ac: ["#d1fae5", "#10b981"], g: ["🂡", "🂮"], sub: "PAYS 3:2" },
+  plinko: { title: "Plinko", bg: ["#241048", "#0a0517"], ac: ["#ddd6fe", "#a78bfa"], g: ["🔻", "⚪"], sub: "PICK YOUR RISK" },
+  mines: { title: "Mines", bg: ["#341206", "#120502"], ac: ["#fed7aa", "#f97316"], g: ["💣", "💎"], sub: "CASH OUT ANY TIME" },
+  crash: { title: "Crash", bg: ["#3a0a14", "#140306"], ac: ["#fecdd3", "#f43f5e"], g: ["🚀", "📈"], sub: "RIDE THE CURVE" },
+  duel: { title: "Duel", bg: ["#3b1220", "#12060c"], ac: ["#e2e8f0", "#94a3b8"], g: ["⚔️", "🛡️"], sub: "BEAT THE HOUSE" },
+  dice: { title: "Dice", bg: ["#1e1b4b", "#0b0a26"], ac: ["#c7d2fe", "#6366f1"], g: ["🎲", "🎲"], sub: "PICK YOUR NUMBER" },
+  wheel: { title: "Wheel", bg: ["#082f2a", "#03110f"], ac: ["#99f6e4", "#14b8a6"], g: ["🎡", "⭐"], sub: "THREE RISK LEVELS" },
+  keno: { title: "Keno", bg: ["#2a1060", "#0e0524"], ac: ["#ddd6fe", "#8b5cf6"], g: ["🎱", "🔮"], sub: "CATCH THE NUMBERS" },
+  limbo: { title: "Limbo", bg: ["#053142", "#02141d"], ac: ["#a5f3fc", "#22d3ee"], g: ["🎯", "📉"], sub: "NAME YOUR NUMBER" },
+  towers: { title: "Towers", bg: ["#04331f", "#021710"], ac: ["#bbf7d0", "#34d399"], g: ["🗼", "💀"], sub: "CLIMB & CASH OUT" },
+  dragontiger: { title: "Dragon Tiger", bg: ["#3a1204", "#170701"], ac: ["#fed7aa", "#f97316"], g: ["🐉", "🐯"], sub: "HIGH CARD WINS" },
+  hilo: { title: "Hi-Lo", bg: ["#052c42", "#02121d"], ac: ["#bae6fd", "#0ea5e9"], g: ["🂱", "⬆️"], sub: "PRESS OR CASH OUT" },
+  lucky7: { title: "Lucky 7", bg: ["#4a3106", "#140d02"], ac: ["#fff3c4", "#f0b429"], g: ["🎲", "7️⃣"], sub: "UNDER · SEVEN · OVER" },
+  rps: { title: "Rock Paper Scissors", bg: ["#241048", "#0d0620"], ac: ["#ddd6fe", "#a78bfa"], g: ["✊", "✌️"], sub: "TIE PUSHES" },
+  darts: { title: "Darts", bg: ["#3a0808", "#170404"], ac: ["#fecaca", "#ef4444"], g: ["🎯", "🎪"], sub: "CALL YOUR RING" },
+  prism: { title: "Prism", bg: ["#33063a", "#150217"], ac: ["#f5d0fe", "#d946ef"], g: ["💎", "🔮"], sub: "LAND A GEM" },
+  penalty: { title: "Penalty Shootout", bg: ["#0a3a14", "#041708"], ac: ["#bbf7d0", "#22c55e"], g: ["⚽", "🧤"], sub: "STREAK MULTIPLIER" },
+  penguin: { title: "Penguin Dash", bg: ["#053347", "#02141d"], ac: ["#a5f3fc", "#06b6d4"], g: ["🐧", "🐻‍❄️"], sub: "HOP THE FLOES" },
+  acey: { title: "Acey Ducey", bg: ["#141048", "#0a071d"], ac: ["#c7d2fe", "#6366f1"], g: ["🎴", "❓"], sub: "BETWEEN OR OUTSIDE" },
+  war: { title: "War", bg: ["#3a0a14", "#170408"], ac: ["#fecdd3", "#f43f5e"], g: ["⚔️", "🛡️"], sub: "GO TO WAR ON TIES" },
+  flip: { title: "10 Card Flip", bg: ["#20263a", "#0d0f18"], ac: ["#e2e8f0", "#94a3b8"], g: ["🃏", "❤️"], sub: "FLIP THE REDS" },
+  bus: { title: "Ride the Bus", bg: ["#3a2e06", "#171202"], ac: ["#fef08a", "#eab308"], g: ["🚌", "🃏"], sub: "FOUR CALLS TO GLORY" },
+  suitlink: { title: "Suit Link", bg: ["#3a0a26", "#17040e"], ac: ["#fbcfe8", "#ec4899"], g: ["🔗", "♥"], sub: "MATCH YOUR SUIT" },
+  hcf: { title: "High Card Flush", bg: ["#04331f", "#021710"], ac: ["#bbf7d0", "#10b981"], g: ["🂡", "♠"], sub: "LONGEST SUIT PAYS" },
+};
+
+function _splitTitle(t: string): string[] {
+  const words = t.toUpperCase().split(" ");
+  if (words.length === 1 || t.length <= 9) return [words.join(" ")];
+  // balance words onto two lines
+  let best: string[] = [words.join(" ")], gap = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(" "), b = words.slice(i).join(" ");
+    const d = Math.abs(a.length - b.length);
+    if (Math.max(a.length, b.length) < best.reduce((m, l) => Math.max(m, l.length), 0) ||
+        (Math.max(a.length, b.length) <= best.reduce((m, l) => Math.max(m, l.length), 0) && d < gap)) {
+      best = [a, b]; gap = d;
+    }
+  }
+  return best;
 }
 
-function DragonArt() {
-  const coin = (x: number, y: number, v: string, r = 12) => (
-    <g key={`${x}${y}`}>
-      <circle cx={x} cy={y} r={r} fill="url(#dg-gold)" stroke="#7c2d12" strokeWidth="1.5" />
-      <text x={x} y={y + 3.5} fontSize={r * 0.62} fontWeight="900" textAnchor="middle"
-        fill="#431407" fontFamily="Arial Black, sans-serif">{v}</text>
-    </g>
-  );
+/* the 3D lockup: dark drop shadow, colored extrude, gradient face, sheen */
+function TitleLockup({ id, lines, ac, cx, cy, maxW = 290, scale = 1 }: {
+  id: string; lines: string[]; ac: [string, string];
+  cx: number; cy: number; maxW?: number; scale?: number;
+}) {
+  const longest = lines.reduce((m, l) => Math.max(m, l.length), 1);
+  const size = Math.max(15, Math.min(38, (maxW / longest) * 1.62)) * scale;
+  const lh = size * 0.98;
+  const y0 = cy - ((lines.length - 1) * lh) / 2;
+  const layer = (dy: number, fill: string, stroke?: string, sw?: number, op?: number) =>
+    lines.map((l, i) => (
+      <text key={`${dy}-${fill}-${i}`} x={cx} y={y0 + i * lh + dy} fontSize={size}
+        fontWeight="900" textAnchor="middle" fill={fill}
+        stroke={stroke} strokeWidth={sw} opacity={op}
+        fontFamily="'Arial Black', Impact, sans-serif"
+        style={{ letterSpacing: "-0.02em" }}
+        dominantBaseline="middle">{l}</text>
+    ));
   return (
-    <Frame id="dg" from="#4a0904" to="#190201">
-      <text x="160" y="82" fontSize="58" textAnchor="middle">🐉</text>
-      {coin(52, 38, "MINI")}
-      {coin(258, 32, "MAXI", 14)}
-      {coin(86, 100, "88")}
-      {coin(236, 98, "MAJOR", 13)}
-      {coin(290, 68, "8")}
-      <text x="160" y="24" fontSize="12" fontWeight="900" textAnchor="middle"
-        fill="url(#dg-gold)" fontFamily="Arial Black, sans-serif">GRAND 2000x</text>
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#dg-gold)" fontFamily="Arial Black, sans-serif">HOLD & WIN</text>
-    </Frame>
-  );
-}
-
-function TumbleArt() {
-  return (
-    <Frame id="tb" from="#3d0a44" to="#150218">
-      <text x="70" y="58" fontSize="34" textAnchor="middle">🍇</text>
-      <text x="128" y="44" fontSize="30" textAnchor="middle">🍉</text>
-      <text x="192" y="60" fontSize="34" textAnchor="middle">🍎</text>
-      <text x="250" y="42" fontSize="30" textAnchor="middle">🍌</text>
-      <text x="160" y="92" fontSize="44" textAnchor="middle">🍭</text>
-      <text x="95" y="98" fontSize="26" textAnchor="middle">❤️</text>
-      <text x="228" y="96" fontSize="26" textAnchor="middle">🍑</text>
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#tb-gold)" fontFamily="Arial Black, sans-serif">TUMBLE WINS</text>
-    </Frame>
-  );
-}
-
-function KenoArt() {
-  const ball = (x: number, y: number, n: string, r = 15) => (
-    <g key={n}>
-      <circle cx={x} cy={y} r={r} fill="url(#kn-gold)" stroke="#7c3aed" strokeWidth="1.5" />
-      <text x={x} y={y + 4} fontSize="12" fontWeight="900" textAnchor="middle"
-        fill="#2e1065" fontFamily="Arial Black, sans-serif">{n}</text>
-    </g>
-  );
-  return (
-    <Frame id="kn" from="#2a1060" to="#0e0524">
-      {ball(70, 50, "7")}
-      {ball(160, 42, "23", 18)}
-      {ball(250, 52, "44")}
-      {ball(110, 92, "12")}
-      {ball(205, 90, "69")}
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#kn-gold)" fontFamily="Arial Black, sans-serif">KENO</text>
-    </Frame>
-  );
-}
-
-function LimboArt() {
-  return (
-    <Frame id="lm" from="#053142" to="#02141d">
-      <text x="160" y="72" fontSize="40" fontWeight="900" textAnchor="middle"
-        fill="url(#lm-gold)" fontFamily="Arial Black, sans-serif">27.4×</text>
-      <path d="M 40 100 Q 120 96 180 70 T 290 22" stroke="#22d3ee"
-        strokeWidth="2.5" fill="none" opacity="0.7" />
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#lm-gold)" fontFamily="Arial Black, sans-serif">NAME YOUR NUMBER</text>
-    </Frame>
-  );
-}
-
-function TowersArt() {
-  const row = (y: number, lit: number) => (
-    <g key={y}>
-      {[0, 1, 2].map((i) => (
-        <rect key={i} x={110 + i * 36} y={y} width="30" height="16" rx="3"
-          fill={i === lit ? "url(#tw-gold)" : "rgba(255,255,255,0.08)"}
-          stroke={i === lit ? "#a16207" : "rgba(255,255,255,0.15)"} />
+    <g>
+      {layer(size * 0.14, "rgba(0,0,0,0.55)")}
+      {layer(size * 0.07, ac[1], "#0b0e14", size * 0.16)}
+      {layer(0, `url(#${id}-face)`, "#0b0e14", size * 0.05)}
+      {lines.map((l, i) => (
+        <text key={`sheen-${i}`} x={cx} y={y0 + i * lh - size * 0.02} fontSize={size}
+          fontWeight="900" textAnchor="middle" fill="rgba(255,255,255,0.28)"
+          fontFamily="'Arial Black', Impact, sans-serif"
+          style={{ letterSpacing: "-0.02em", clipPath: `inset(0 0 55% 0)` }}
+          dominantBaseline="middle">{l}</text>
       ))}
     </g>
   );
+}
+
+function Poster({ k, p }: { k: string; p: PosterSpec }) {
+  const id = `po-${k.replace(/[^a-z0-9]/gi, "")}`;
+  const lines = _splitTitle(p.title);
   return (
-    <Frame id="tw" from="#04331f" to="#021710">
-      {row(24, -1)}{row(44, 1)}{row(64, 0)}{row(84, 2)}
-      <text x="60" y="60" fontSize="30" textAnchor="middle">🗼</text>
-      <text x="260" y="60" fontSize="24" textAnchor="middle">💀</text>
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#tw-gold)" fontFamily="Arial Black, sans-serif">CLIMB & CASH OUT</text>
-    </Frame>
+    <svg viewBox="0 0 320 128" className="h-full w-full" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id={`${id}-bg`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={p.bg[0]} />
+          <stop offset="1" stopColor={p.bg[1]} />
+        </linearGradient>
+        <linearGradient id={`${id}-face`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.25" stopColor={p.ac[0]} />
+          <stop offset="1" stopColor={p.ac[1]} />
+        </linearGradient>
+        <radialGradient id={`${id}-glow`} cx="0.5" cy="0.3" r="0.75">
+          <stop offset="0" stopColor="rgba(255,255,255,0.16)" />
+          <stop offset="1" stopColor="rgba(255,255,255,0)" />
+        </radialGradient>
+        <radialGradient id={`${id}-vig`} cx="0.5" cy="0.5" r="0.72">
+          <stop offset="0.62" stopColor="rgba(0,0,0,0)" />
+          <stop offset="1" stopColor="rgba(0,0,0,0.55)" />
+        </radialGradient>
+      </defs>
+      <rect width="320" height="128" fill={`url(#${id}-bg)`} />
+      {/* light rays fanning from behind the title */}
+      <g opacity="0.10">
+        {Array.from({ length: 9 }, (_, i) => {
+          const a = -80 + i * 20;
+          return <polygon key={i} points="160,58 -40,128 400,128"
+            transform={`rotate(${a} 160 58)`} fill={p.ac[0]} opacity={i % 2 ? 0.5 : 1} />;
+        })}
+      </g>
+      <rect width="320" height="128" fill={`url(#${id}-glow)`} />
+      {/* scene glyphs */}
+      <text x="42" y="76" fontSize="46" textAnchor="middle"
+        transform="rotate(-10 42 62)" style={{ filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.5))" }}>{p.g[0]}</text>
+      {p.g[1] && (
+        <text x="282" y="70" fontSize="38" textAnchor="middle"
+          transform="rotate(10 278 56)" style={{ filter: "drop-shadow(0 3px 2px rgba(0,0,0,0.5))" }}>{p.g[1]}</text>
+      )}
+      {/* sparkles */}
+      <circle cx="70" cy="24" r="1.6" fill="#fff" opacity="0.7" />
+      <circle cx="252" cy="18" r="1.2" fill="#fff" opacity="0.5" />
+      <circle cx="296" cy="98" r="1.4" fill="#fff" opacity="0.4" />
+      <circle cx="24" cy="102" r="1.2" fill="#fff" opacity="0.4" />
+      <TitleLockup id={id} lines={lines} ac={p.ac} cx={160} cy={lines.length > 1 ? 56 : 58} />
+      {/* tagline + house badge */}
+      {p.sub && (
+        <text x="160" y={lines.length > 1 ? 102 : 88} fontSize="8.5" fontWeight="700"
+          textAnchor="middle" fill="rgba(255,255,255,0.75)"
+          fontFamily="Arial, sans-serif" style={{ letterSpacing: "0.22em" }}>{p.sub}</text>
+      )}
+      <g>
+        <rect x="112" y="110" width="96" height="13" rx="6.5" fill="rgba(0,0,0,0.5)"
+          stroke="rgba(240,180,41,0.45)" strokeWidth="0.8" />
+        <text x="160" y="119" fontSize="7.5" fontWeight="900" textAnchor="middle"
+          fill="#f0b429" fontFamily="Arial Black, sans-serif"
+          style={{ letterSpacing: "0.14em" }}>★ LUCKY777 ★</text>
+      </g>
+      <rect width="320" height="128" fill={`url(#${id}-vig)`} />
+    </svg>
   );
 }
 
-function DTArt() {
+/* standalone logo lockup for game screens: transparent, wide */
+export function GameLogo({ k }: { k: string }) {
+  const p = POSTERS[k];
+  if (!p) return null;
+  const id = `lg-${k.replace(/[^a-z0-9]/gi, "")}`;
+  const lines = [_splitTitle(p.title).join(" ")];
   return (
-    <Frame id="dt" from="#3a1204" to="#170701">
-      <text x="80" y="70" fontSize="44" textAnchor="middle">🐉</text>
-      <text x="240" y="70" fontSize="44" textAnchor="middle">🐯</text>
-      <text x="160" y="72" fontSize="20" fontWeight="900" textAnchor="middle"
-        fill="url(#dt-gold)" fontFamily="Arial Black, sans-serif">VS</text>
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#dt-gold)" fontFamily="Arial Black, sans-serif">HIGH CARD WINS</text>
-    </Frame>
-  );
-}
-
-function HiLoArt() {
-  return (
-    <Frame id="hl" from="#052c42" to="#02121d">
-      <rect x="130" y="26" width="58" height="76" rx="7" fill="#f8fafc" stroke="#cbd5e1" />
-      <text x="159" y="76" fontSize="30" fontWeight="900" textAnchor="middle" fill="#dc2626">J♥</text>
-      <text x="95" y="72" fontSize="30" fontWeight="900" textAnchor="middle" fill="#4ade80">▲</text>
-      <text x="225" y="72" fontSize="30" fontWeight="900" textAnchor="middle" fill="#f87171">▼</text>
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill="url(#hl-gold)" fontFamily="Arial Black, sans-serif">HIGHER OR LOWER</text>
-    </Frame>
-  );
-}
-
-/* compact tiles for the arcade wall: theme gradient, hero emoji, gold title */
-const EMOJI_TILES: Record<string, { from: string; to: string; hero: string;
-  side?: string; label: string }> = {
-  lucky7: { from: "#3a2606", to: "#140d02", hero: "🎲", side: "7️⃣", label: "LUCKY 7" },
-  rps: { from: "#241048", to: "#0d0620", hero: "✊", side: "✌️", label: "ROCK PAPER SCISSORS" },
-  darts: { from: "#3a0808", to: "#170404", hero: "🎯", label: "CALL YOUR RING" },
-  prism: { from: "#33063a", to: "#150217", hero: "💎", side: "🔮", label: "PRISM" },
-  penalty: { from: "#0a3a14", to: "#041708", hero: "⚽", side: "🧤", label: "PENALTY SHOOTOUT" },
-  penguin: { from: "#053347", to: "#02141d", hero: "🐧", side: "🐻‍❄️", label: "PENGUIN DASH" },
-  acey: { from: "#141048", to: "#0a071d", hero: "🎴", label: "BETWEEN OR OUTSIDE" },
-  war: { from: "#3a0a14", to: "#170408", hero: "⚔️", label: "HIGH CARD WINS" },
-  flip: { from: "#20263a", to: "#0d0f18", hero: "🃏", side: "❤️", label: "FLIP THE REDS" },
-  bus: { from: "#3a2e06", to: "#171202", hero: "🚌", label: "RIDE THE BUS" },
-  suitlink: { from: "#3a0a26", to: "#17040e", hero: "🔗", side: "♥", label: "SUIT LINK" },
-  hcf: { from: "#04331f", to: "#021710", hero: "🂡", side: "♠", label: "HIGH CARD FLUSH" },
-};
-
-function EmojiTile({ id, t }: { id: string;
-  t: { from: string; to: string; hero: string; side?: string; label: string } }) {
-  return (
-    <Frame id={`et-${id}`} from={t.from} to={t.to}>
-      <text x="160" y="82" fontSize="54" textAnchor="middle">{t.hero}</text>
-      {t.side && <text x="252" y="52" fontSize="28" textAnchor="middle">{t.side}</text>}
-      {t.side && <text x="66" y="46" fontSize="22" textAnchor="middle" opacity="0.7">{t.side}</text>}
-      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
-        fill={`url(#et-${id}-gold)`} fontFamily="Arial Black, sans-serif">{t.label}</text>
-    </Frame>
+    <svg viewBox="0 0 320 44" className="h-12 w-auto" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <linearGradient id={`${id}-face`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.25" stopColor={p.ac[0]} />
+          <stop offset="1" stopColor={p.ac[1]} />
+        </linearGradient>
+      </defs>
+      <TitleLockup id={id} lines={lines} ac={p.ac} cx={160} cy={23} maxW={300} scale={0.86} />
+    </svg>
   );
 }
 
 export default function GameArt({ k }: { k: string }) {
-  const et = EMOJI_TILES[k];
-  if (et) return <EmojiTile id={k} t={et} />;
-  if (k === "keno") return <KenoArt />;
-  if (k === "limbo") return <LimboArt />;
-  if (k === "towers") return <TowersArt />;
-  if (k === "dragontiger") return <DTArt />;
-  if (k === "hilo") return <HiLoArt />;
-  if (k === "tumble") return <TumbleArt />;
-  if (k === "dragon") return <DragonArt />;
-  if (k === "holdspin") return <PiggyArt />;
-  if (k === "blackjack") return <BlackjackArt />;
-  if (k === "roulette") return <RouletteArt />;
-  if (k === "videopoker") return <VideoPokerArt />;
-  if (k === "baccarat") return <BaccaratArt />;
-  if (k === "mines") return <MinesArt />;
-  if (k === "crash") return <CrashArt />;
-  if (k === "plinko") return <PlinkoArt />;
-  if (k === "duel") return <DuelArt />;
-  if (k === "dice") return <DiceArt />;
-  if (k === "wheel") return <WheelArt />;
+  const p = POSTERS[k];
+  if (p) return <Poster k={k} p={p} />;
   const t = SLOT_THEMES[k];
   if (t) return <SlotArt theme={t} window={t.window} />;
   return <BlackjackArt />;

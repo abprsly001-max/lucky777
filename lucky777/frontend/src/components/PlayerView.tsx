@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import Duel from "./Duel";
-import GameArt, { SYMBOL_GLYPH } from "./GameArt";
+import GameArt, { GameLogo, SYMBOL_GLYPH } from "./GameArt";
 import Sportsbook from "./Sportsbook";
 
 type Tab = "board" | "casino" | "wagers" | "figures" | "rules"
@@ -528,6 +528,23 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
   const games = (lobby?.games ?? []).filter((g) => cat === "all" || g.category === cat);
   return (
     <div className="mx-auto max-w-3xl space-y-3">
+      {/* the marquee */}
+      <div className="relative overflow-hidden rounded-xl border border-gold/25 bg-gradient-to-b from-[#1a1204] via-base-900 to-base-950 px-4 py-3 shadow-card">
+        <div className="pointer-events-none absolute inset-0 opacity-40"
+          style={{ background: "radial-gradient(420px 90px at 50% -20px, rgba(240,180,41,0.25), transparent 70%)" }} />
+        <div className="relative flex items-center justify-between">
+          <div>
+            <div className="font-black uppercase tracking-[0.28em] text-[10px] text-gold/70">Welcome to the</div>
+            <div className="bg-gradient-to-b from-[#fff3c4] via-gold to-[#c98a10] bg-clip-text text-2xl font-black uppercase tracking-tight text-transparent drop-shadow-[0_2px_6px_rgba(240,180,41,0.35)]">
+              Lucky777 Casino
+            </div>
+          </div>
+          <div className="hidden text-right sm:block">
+            <div className="font-mono text-[10px] text-slate-500">{(lobby?.games ?? []).length} games on the floor</div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-gold/80">Instant settle · House book</div>
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-center text-xs font-semibold">
         {([["all", "Lobby"], ["slots", "Slots"], ["table", "Table Games"], ["quick", "Quick Games"]] as const)
           .map(([id, label]) => (
@@ -542,13 +559,10 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
         {games.map((g) => (
           <button key={g.key} onClick={() => setGame(g.key)}
             className="group overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-left transition hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-pop">
-            <div className="relative h-20 overflow-hidden sm:h-24">
+            <div className="relative h-24 overflow-hidden sm:h-28">
               <div className="h-full w-full transition duration-300 group-hover:scale-105">
                 <GameArt k={g.key} />
               </div>
-              <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-gold">
-                Original
-              </span>
             </div>
             <div className="flex items-center justify-between px-2.5 py-2">
               <span className="truncate text-[13px] font-bold text-slate-100">{g.name}</span>
@@ -643,7 +657,7 @@ function SlotGame({ def, onBalance, onPlayed }: {
     <div className="space-y-3">
       <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
         <div className="mb-3 flex items-baseline justify-between">
-          <h3 className="text-sm font-bold text-slate-100">🎰 {def.name}</h3>
+          <GameLogo k={def.key} />
 
         </div>
 
@@ -811,7 +825,7 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-bold text-slate-100">🐷 Piggy Bank Blast</h3>
+        <GameLogo k="holdspin" />
         <span className="font-mono text-[10px] text-slate-500">Grand {def.grand}× at 15/15</span>
       </div>
 
@@ -2241,7 +2255,7 @@ function SugarBlast({ def, onBalance, onPlayed }: {
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-bold text-slate-100">🍭 Sugar Blast</h3>
+        <GameLogo k="tumble" />
         <span className="font-mono text-[10px] text-slate-500">Max win {Number(def.max_win).toLocaleString()}×</span>
       </div>
 
@@ -2393,7 +2407,7 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-bold text-slate-100">🐉 Golden Dragon Inferno</h3>
+        <GameLogo k="dragon" />
         <span className="font-mono text-[10px] text-slate-500">Hold & Win</span>
       </div>
 
@@ -2660,7 +2674,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
     <div className="space-y-3">
       <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
         <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-bold text-slate-100">🎰 {def.name}</h3>
+          <GameLogo k={def.key} />
           <button onClick={() => setShowPays(!showPays)}
             className="text-[10px] font-bold text-sky-400 hover:text-sky-300">
             {showPays ? "Hide pays" : "Paytable"}
