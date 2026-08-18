@@ -67,11 +67,29 @@ class TheOddsApiProvider(OddsProvider):
                 return group
         return ("other", "Other", "🎯")
 
+    # what a book leads with, in order. Their /sports list is alphabetical,
+    # which starves soccer and tennis at any sane cap -- rank it ourselves.
+    PRIORITY = ["americanfootball_nfl", "baseball_mlb", "basketball_nba",
+                "basketball_wnba", "icehockey_nhl", "americanfootball_ncaaf",
+                "soccer_epl", "soccer_uefa", "soccer_spain_la_liga",
+                "soccer_italy_serie_a", "soccer_germany_bundesliga",
+                "soccer_france_ligue_one", "soccer_usa_mls", "soccer_mexico",
+                "tennis_", "mma_", "boxing_", "soccer_", "baseball_",
+                "basketball_", "icehockey_", "americanfootball_"]
+
+    def _rank(self, key: str) -> tuple[int, str]:
+        for i, pref in enumerate(self.PRIORITY):
+            if key.startswith(pref):
+                return (i, key)
+        return (len(self.PRIORITY), key)
+
     async def _active_sports(self, client: httpx.AsyncClient) -> list[dict]:
         r = await client.get(f"{BASE}/sports", params={"apiKey": self.api_key})
         r.raise_for_status()
-        return [s for s in r.json()
-                if s.get("active") and not s.get("has_outrights")][: self.max_sports]
+        live = [s for s in r.json()
+                if s.get("active") and not s.get("has_outrights")]
+        live.sort(key=lambda s: self._rank(s["key"]))
+        return live[: self.max_sports]
 
     async def fetch_events(self) -> list[ProviderEvent]:
         now = datetime.now(timezone.utc)
