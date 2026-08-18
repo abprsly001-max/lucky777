@@ -18,9 +18,12 @@
     font-family: "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* faint gold glow off the top edge: depth without noise */
+    /* casino-floor ambiance: warm gold falling from above, cool violet and
+       teal wells in the corners, everything sinking into black */
     background:
-      radial-gradient(1100px 420px at 50% -120px, rgba(240, 180, 41, 0.06), transparent 65%),
+      radial-gradient(1100px 460px at 50% -130px, rgba(240, 180, 41, 0.09), transparent 65%),
+      radial-gradient(900px 700px at -12% 45%, rgba(109, 40, 217, 0.07), transparent 60%),
+      radial-gradient(900px 700px at 112% 70%, rgba(8, 145, 178, 0.06), transparent 60%),
       #0b0e14;
     background-attachment: fixed;
   }
@@ -97,6 +100,8 @@
 @layer components {
   /* primary action: gold with a subtle top-light gradient + glow */
   .btn-gold {
+    position: relative;
+    overflow: hidden;
     background-image: linear-gradient(180deg, #f7ca5e 0%, #f0b429 45%, #e0a418 100%);
     color: #0b0e14;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
@@ -105,6 +110,58 @@
   .btn-gold:hover:not(:disabled) {
     filter: brightness(1.07);
   }
+  /* a light bar sweeping across gold surfaces on hover */
+  .btn-gold::after {
+    content: "";
+    position: absolute;
+    top: -20%;
+    left: -70%;
+    height: 140%;
+    width: 45%;
+    transform: skewX(-22deg);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .btn-gold:hover:not(:disabled)::after {
+    animation: gold-sweep 0.65s ease-out;
+  }
+
+  /* the same sweep for game tiles and cards */
+  .tile-shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .tile-shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    left: -80%;
+    width: 55%;
+    transform: skewX(-20deg);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .tile-shine:hover::after {
+    animation: gold-sweep 0.7s ease-out;
+  }
+
+  /* glass panel: the premium chrome around navigation */
+  .glass-bar {
+    background: linear-gradient(180deg, rgba(30, 38, 53, 0.85), rgba(17, 22, 32, 0.85));
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: 0 4px 18px -6px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+}
+
+@keyframes gold-sweep {
+  0% { left: -80%; opacity: 0; }
+  15% { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
 }
 
 @layer utilities {

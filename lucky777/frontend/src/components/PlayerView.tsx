@@ -27,12 +27,12 @@ export default function PlayerView({ onBalance, username }: {
 
   const balanced = (b: string) => { onBalance(b); refresh(); };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "board", label: "Sportsbook" },
-    { id: "casino", label: "Casino" },
-    { id: "wagers", label: "My Wagers" },
-    { id: "figures", label: "My Figures" },
-    { id: "rules", label: "Rules" },
+  const tabs: { id: Tab; label: string; icon: string }[] = [
+    { id: "board", label: "Sportsbook", icon: "🏈" },
+    { id: "casino", label: "Casino", icon: "🎰" },
+    { id: "wagers", label: "My Wagers", icon: "🧾" },
+    { id: "figures", label: "My Figures", icon: "📊" },
+    { id: "rules", label: "Rules", icon: "ℹ️" },
   ];
 
   const MENU: { id: Tab; icon: string; label: string }[] = [
@@ -48,22 +48,24 @@ export default function PlayerView({ onBalance, username }: {
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0">
-      <nav className="hidden flex-wrap items-center gap-1.5 sm:flex">
+      <nav className="glass-bar hidden items-center gap-1 rounded-2xl p-1.5 sm:flex">
         <button onClick={() => setMenu(true)}
-          className="rounded-lg border border-white/5 bg-base-800 shadow-card px-3 py-1.5 text-base leading-none text-gold hover:bg-base-700"
+          className="grid h-9 w-10 place-items-center rounded-xl text-base leading-none text-gold transition hover:bg-white/5"
           aria-label="menu">
           ☰
         </button>
+        <span className="mx-0.5 h-6 w-px bg-white/10" />
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
-              tab === t.id ? "btn-gold text-base-900"
-                : "border border-white/5 bg-base-800 text-slate-300 shadow-card hover:border-white/15 hover:bg-base-700 hover:text-slate-100"}`}>
-            {t.label}
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition ${
+              tab === t.id
+                ? "btn-gold text-base-900 shadow-gold"
+                : "text-slate-300 hover:bg-white/5 hover:text-slate-100"}`}>
+            <span className="text-sm leading-none">{t.icon}</span>{t.label}
           </button>
         ))}
         {Number(fp) > 0 && (
-          <span className="ml-auto rounded-lg bg-sky-500/15 px-3 py-1.5 font-mono text-xs font-semibold text-sky-300">
+          <span className="ml-auto rounded-xl border border-sky-400/25 bg-sky-500/15 px-3 py-1.5 font-mono text-xs font-semibold text-sky-300">
             Free play {money(fp)}
           </span>
         )}
@@ -118,14 +120,19 @@ export default function PlayerView({ onBalance, username }: {
       )}
 
       {/* phone app bar */}
-      <div className="fixed inset-x-0 bottom-0 z-50 grid h-14 grid-cols-5 border-t border-white/10 bg-base-900/95 backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-50 grid h-[3.75rem] grid-cols-5 border-t border-white/10 bg-base-900/95 backdrop-blur
+        before:absolute before:inset-x-0 before:top-[-1px] before:h-px
+        before:bg-gradient-to-r before:from-transparent before:via-gold/40 before:to-transparent sm:hidden">
         {([["board", "🏈", "Sports"], ["casino", "🎰", "Casino"],
            ["wagers", "🧾", "My Bets"], ["figures", "📊", "Figures"]] as const)
           .map(([id, icon, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold ${
+            className={`relative flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold transition ${
               tab === id ? "text-gold" : "text-slate-400"}`}>
-            <span className="text-lg leading-none">{icon}</span>{label}
+            {tab === id && (
+              <span className="absolute top-0 h-0.5 w-8 rounded-full bg-gold shadow-gold" />
+            )}
+            <span className={`text-lg leading-none ${tab === id ? "drop-shadow-[0_0_6px_rgba(240,180,41,0.7)]" : ""}`}>{icon}</span>{label}
           </button>
         ))}
         <button onClick={() => setMenu(true)}
@@ -545,32 +552,63 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-center text-xs font-semibold">
-        {([["all", "Lobby"], ["slots", "Slots"], ["table", "Table Games"], ["quick", "Quick Games"]] as const)
-          .map(([id, label]) => (
+      <div className="glass-bar grid grid-cols-4 overflow-hidden rounded-2xl p-1 text-center text-xs font-bold">
+        {([["all", "🏛️", "Lobby"], ["slots", "🎰", "Slots"],
+           ["table", "🃏", "Tables"], ["quick", "⚡", "Quick"]] as const)
+          .map(([id, icon, label]) => (
           <button key={id} onClick={() => setCat(id)}
-            className={`py-2.5 transition ${
-              cat === id ? "btn-gold text-base-900" : "text-slate-300 hover:bg-base-700"}`}>
-            {label}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 transition ${
+              cat === id ? "btn-gold text-base-900 shadow-gold" : "text-slate-300 hover:bg-white/5"}`}>
+            <span>{icon}</span>{label}
+            <span className={`rounded-full px-1.5 text-[9px] font-black ${
+              cat === id ? "bg-black/20" : "bg-white/10 text-slate-400"}`}>
+              {(lobby?.games ?? []).filter((g) => id === "all" || g.category === id).length}
+            </span>
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        {games.map((g) => (
-          <button key={g.key} onClick={() => setGame(g.key)}
-            className="group overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-left transition hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-pop">
-            <div className="relative h-24 overflow-hidden sm:h-28">
-              <div className="h-full w-full transition duration-300 group-hover:scale-105">
-                <GameArt k={g.key} />
-              </div>
+      {(cat === "all"
+        ? [["🔥 Featured", games.filter((g) => LOBBY_HOT.has(g.key))],
+           ["🎰 Slots", games.filter((g) => g.category === "slots" && !LOBBY_HOT.has(g.key))],
+           ["🃏 Table Games", games.filter((g) => g.category === "table" && !LOBBY_HOT.has(g.key))],
+           ["⚡ Quick Games", games.filter((g) => g.category === "quick" && !LOBBY_HOT.has(g.key))]] as const
+        : [["", games]] as const
+      ).map(([title, list]) => list.length === 0 ? null : (
+        <div key={title || "flat"}>
+          {title && (
+            <div className="mb-2 mt-1 flex items-center gap-2 px-0.5">
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-gold/90">{title}</span>
+              <span className="h-px flex-1 bg-gradient-to-r from-gold/30 to-transparent" />
             </div>
-            <div className="flex items-center justify-between px-2.5 py-2">
-              <span className="truncate text-[13px] font-bold text-slate-100">{g.name}</span>
-              <span className="text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-gold">›</span>
-            </div>
-          </button>
-        ))}
-      </div>
+          )}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {list.map((g) => (
+              <button key={g.key} onClick={() => setGame(g.key)}
+                className="tile-shine group overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card text-left transition hover:-translate-y-1 hover:border-gold/50 hover:shadow-[0_10px_30px_-8px_rgba(240,180,41,0.35)]">
+                <div className="relative h-24 overflow-hidden sm:h-28">
+                  <div className="h-full w-full transition duration-300 group-hover:scale-[1.06]">
+                    <GameArt k={g.key} />
+                  </div>
+                  {LOBBY_HOT.has(g.key) && (
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-gradient-to-b from-red-500 to-red-700 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-white shadow-pop">
+                      🔥 Hot
+                    </span>
+                  )}
+                  {LOBBY_NEW.has(g.key) && !LOBBY_HOT.has(g.key) && (
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-gradient-to-b from-emerald-400 to-emerald-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-base-900 shadow-pop">
+                      New
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-2">
+                  <span className="truncate text-[13px] font-bold text-slate-100">{g.name}</span>
+                  <span className="text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-gold">›</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       <p className="px-1 text-[10px] leading-relaxed text-slate-500">
         Table games, slots and quick games, all against the house book. Every game
         settles instantly to your balance and shows in your weekly figures.
@@ -578,6 +616,12 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
     </div>
   );
 }
+
+// the lobby's shelf talkers
+const LOBBY_HOT = new Set(["tumble", "dragon", "holdspin", "crash", "mines"]);
+const LOBBY_NEW = new Set(["keno", "limbo", "towers", "dragontiger", "hilo",
+  "lucky7", "rps", "darts", "prism", "penalty", "penguin", "acey", "war",
+  "flip", "bus", "suitlink", "hcf"]);
 
 
 // ----------------------------------------------------------------- slots ----

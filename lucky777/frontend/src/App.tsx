@@ -131,7 +131,10 @@ function Shell({ session, setSession }: { session: Me; setSession: (s: Me) => vo
 
   return (
     <div className="min-h-screen text-slate-200">
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-base-900/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-base-900/85 backdrop-blur
+        after:absolute after:inset-x-0 after:bottom-[-1px] after:h-px
+        after:bg-gradient-to-r after:from-transparent after:via-gold/50 after:to-transparent
+        relative">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-5">
           <div className="flex items-center gap-2.5">
             <LogoMark size={28} />
@@ -147,7 +150,7 @@ function Shell({ session, setSession }: { session: Me; setSession: (s: Me) => vo
                 {session.isMaster ? "master agent" : "agent"}
               </span>
             ) : (
-              <span className="flex items-baseline gap-1.5 rounded-full border border-white/10 bg-base-800 px-3 py-1 shadow-card">
+              <span className="flex items-baseline gap-1.5 rounded-full border border-gold/25 bg-base-800 px-3 py-1 shadow-[0_0_12px_-4px_rgba(240,180,41,0.45)]">
                 <span className="text-[9px] font-medium uppercase tracking-wider text-slate-500">bal</span>
                 <span className={`font-mono text-sm font-bold ${
                   Number(session.balance) < 0 ? "text-red-400" : "text-accent"}`}>
