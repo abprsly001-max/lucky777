@@ -24,4 +24,6 @@ services:
       - key: LUCKY777_LIVE_SCORES_POLL_SECONDS
         value: "60"
       - key: LUCKY777_BOARD_SYNC_MINUTES
-        value: "30"
+        value: "45"
+      - key: LUCKY777_ODDS_MAX_SPORTS
+        value: "24"

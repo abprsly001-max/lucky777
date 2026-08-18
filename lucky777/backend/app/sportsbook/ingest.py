@@ -20,7 +20,8 @@ def get_provider() -> OddsProvider:
     if settings.odds_provider == "the_odds_api" and settings.odds_api_key:
         from .providers.the_odds_api import TheOddsApiProvider
         return TheOddsApiProvider(settings.odds_api_key,
-                                  regions=settings.odds_regions)
+                                  regions=settings.odds_regions,
+                                  max_sports=settings.odds_max_sports)
     return FixtureProvider(events_per_competition=settings.fixture_events_per_competition)
 
 

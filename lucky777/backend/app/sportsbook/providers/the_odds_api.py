@@ -70,7 +70,8 @@ class TheOddsApiProvider(OddsProvider):
     async def _active_sports(self, client: httpx.AsyncClient) -> list[dict]:
         r = await client.get(f"{BASE}/sports", params={"apiKey": self.api_key})
         r.raise_for_status()
-        return [s for s in r.json() if s.get("active")][: self.max_sports]
+        return [s for s in r.json()
+                if s.get("active") and not s.get("has_outrights")][: self.max_sports]
 
     async def fetch_events(self) -> list[ProviderEvent]:
         now = datetime.now(timezone.utc)
