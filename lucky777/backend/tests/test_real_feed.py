@@ -75,7 +75,7 @@ async def test_feed_scores_take_a_game_live_then_grade_it(session, monkeypatch):
     alts = (await session.execute(
         select(Market).where(Market.event_id == ev.id,
                              Market.type == "alt_totals"))).scalars().all()
-    assert len(alts) == 7
+    assert len(alts) == 11
 
     # the moneyline repriced off the real score: the leader got shorter
     home = (await session.execute(

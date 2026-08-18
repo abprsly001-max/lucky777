@@ -165,8 +165,18 @@ PACE_PROB = {
     "baseball": 0.055, "basketball": 0.010, "americanfootball": 0.028,
     "icehockey": 0.090, "soccer": 0.140, "rugby": 0.020, "cricket": 0.003,
 }
-ALT_OFFSETS = [Decimal("-1.5"), Decimal("-1.0"), Decimal("-0.5"), Decimal("0"),
-               Decimal("0.5"), Decimal("1.0"), Decimal("1.5")]
+ALT_OFFSETS = [Decimal(x) for x in
+               ("-2.5", "-2.0", "-1.5", "-1.0", "-0.5", "0",
+                "0.5", "1.0", "1.5", "2.0", "2.5")]
+
+# a sane opening total per sport, for games the feed never priced
+DEFAULT_TOTALS = {
+    "baseball": Decimal("8.5"), "basketball": Decimal("224.5"),
+    "americanfootball": Decimal("44.5"), "icehockey": Decimal("6.5"),
+    "soccer": Decimal("2.5"), "rugby": Decimal("44.5"),
+    "tennis": Decimal("21.5"), "mma": Decimal("2.5"),
+    "boxing": Decimal("9.5"), "cricket": Decimal("300.5"),
+}
 
 
 def _pair_probs(sels: list[Selection]) -> dict[str, Decimal]:
@@ -181,22 +191,44 @@ def _price_pair(p_first: Decimal) -> list[Decimal]:
     return apply_margin([p, 1 - p], Decimal("1.06"))
 
 
+async def _h2h_home_prob(session: AsyncSession, ev: Event) -> Decimal:
+    """Home win probability off the frozen moneyline (draw mass ignored)."""
+    rows = (await session.execute(
+        select(Selection).join(Market, Market.id == Selection.market_id)
+        .where(Market.event_id == ev.id, Market.type == "h2h"))).scalars().all()
+    inv = {s.key: 1 / Decimal(s.odds_decimal) for s in rows
+           if s.key in ("home", "away")}
+    if len(inv) != 2:
+        return Decimal("0.5")
+    return inv["home"] / (inv["home"] + inv["away"])
+
+
 async def _build_alt_ladders(session: AsyncSession, ev: Event, sport_key: str,
                              main_spread: Market | None,
                              main_total: Market | None) -> None:
-    """Create the live run-line / alt-total ladders off the frozen closers."""
+    """Create the live run-line / alt-total ladders off the frozen closers.
+
+    Games the feed never gave a spread or total still get a full board:
+    the ladder is synthesized around a sport-typical line, anchored to the
+    moneyline for the spread side."""
     hp = Decimal(str(HALF_POINT_PROB.get(sport_key, 0.03)))
     for main, alt_type in ((main_spread, "alt_spreads"), (main_total, "alt_totals")):
-        if main is None or main.line is None:
-            continue
-        sels = (await session.execute(
-            select(Selection).where(Selection.market_id == main.id))).scalars().all()
-        if len(sels) != 2:
-            continue
-        probs = _pair_probs(sels)
-        base_line = Decimal(main.line)
-        first_key = "home" if alt_type == "alt_spreads" else "over"
-        p_base = probs.get(first_key, Decimal("0.5"))
+        if main is not None and main.line is not None:
+            sels = (await session.execute(
+                select(Selection).where(Selection.market_id == main.id))).scalars().all()
+            if len(sels) != 2:
+                continue
+            probs = _pair_probs(sels)
+            base_line = Decimal(main.line)
+            first_key = "home" if alt_type == "alt_spreads" else "over"
+            p_base = probs.get(first_key, Decimal("0.5"))
+        elif alt_type == "alt_spreads":
+            base_line = Decimal("0")
+            p_base = max(Decimal("0.2"), min(Decimal("0.8"),
+                         await _h2h_home_prob(session, ev)))
+        else:
+            base_line = DEFAULT_TOTALS.get(sport_key, Decimal("2.5"))
+            p_base = Decimal("0.5")
         for off in ALT_OFFSETS:
             line = base_line + off
             steps = off / Decimal("0.5")
@@ -408,4 +440,40 @@ async def _reprice_alts(session: AsyncSession, ev: Event, sport_key: str,
             if new != sel.odds_decimal:
                 sel.odds_decimal = new
                 moved += 1
+    moved += await _refill_totals(session, ev, sport_key, frac)
     return moved
+
+
+async def _refill_totals(session: AsyncSession, ev: Event, sport_key: str,
+                         frac: float) -> int:
+    """Keep the total ladder stocked: as the score climbs past rungs and
+    suspends them, new higher rungs open above — the board never runs dry."""
+    all_totals = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type == "alt_totals"))).scalars().all()
+    if not all_totals:
+        return 0
+    open_totals = [m for m in all_totals if m.status == "open"]
+    if len(open_totals) >= 5:
+        return 0
+    current_total = (ev.home_score or 0) + (ev.away_score or 0)
+    top = max(max(Decimal(m.line or "0") for m in all_totals),
+              Decimal(current_total) - Decimal("0.5"))
+    pace = Decimal(str(PACE_PROB.get(sport_key, 0.05)))
+    expected_final = (Decimal(current_total) / Decimal(str(max(frac, 0.15))))
+    added = 0
+    while len(open_totals) + added < 5 and added < 6:
+        top += Decimal("1")
+        p_over = Decimal("0.5") + (expected_final - top) * pace
+        priced = _price_pair(p_over)
+        m = Market(event_id=ev.id, type="alt_totals", line=str(top),
+                   name="Total", status="open")
+        session.add(m)
+        await session.flush()
+        for (name, k), price in zip(
+                ((f"Over {top}", "over"), (f"Under {top}", "under")), priced):
+            session.add(Selection(market_id=m.id, key=k, name=name,
+                                  odds_decimal=str(price),
+                                  opening_odds=str(price)))
+        added += 1
+    return added

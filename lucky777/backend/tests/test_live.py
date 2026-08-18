@@ -110,7 +110,7 @@ async def test_go_live_builds_alt_ladders_and_line_score(session):
                              Market.type == "alt_totals",
                              Market.status == "open"))).scalars().all()
     lines = sorted(float(x.line) for x in alts)
-    assert len(lines) == 7 and lines == sorted(set(lines))
+    assert len(lines) == len(live.ALT_OFFSETS) and lines == sorted(set(lines))
     assert ev.period_scores == "[]"
 
     for _ in range(6):
@@ -146,3 +146,51 @@ async def test_alt_ladder_prices_step_with_the_line(session):
     by_line = sorted(((float(mk.line), float(sel.odds_decimal)) for sel, mk in rows))
     odds = [o for _, o in by_line]
     assert odds == sorted(odds)   # higher line -> longer over
+
+
+@pytest.mark.asyncio
+async def test_bare_moneyline_game_still_gets_a_full_live_board(session):
+    """A game the feed only priced h2h synthesizes spread + total ladders."""
+    u = User(username="q2", password_hash="x", credit_limit_micros=to_micros("10000"))
+    session.add(u); await session.flush()
+    sp = Sport(key="tennis", name="Tennis")
+    session.add(sp); await session.flush()
+    comp = Competition(sport_id=sp.id, key="tennis.atp", name="ATP")
+    session.add(comp); await session.flush()
+    ev = Event(provider_id="lv2", competition_id=comp.id, home="A", away="B",
+               starts_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    session.add(ev); await session.flush()
+    m = Market(event_id=ev.id, type="h2h", name="Moneyline")
+    session.add(m); await session.flush()
+    session.add_all([
+        Selection(market_id=m.id, key="home", name="A", odds_decimal="1.50"),
+        Selection(market_id=m.id, key="away", name="B", odds_decimal="2.60"),
+    ])
+    await session.flush()
+
+    await live.go_live(session, [ev.id])
+    spreads = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type == "alt_spreads",
+                             Market.status == "open"))).scalars().all()
+    totals = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type == "alt_totals",
+                             Market.status == "open"))).scalars().all()
+    assert len(spreads) == len(live.ALT_OFFSETS)
+    assert len(totals) == len(live.ALT_OFFSETS)
+
+
+@pytest.mark.asyncio
+async def test_total_ladder_refills_as_the_score_climbs(session):
+    u, ev, m, t, _ = await _game(session)
+    await live.go_live(session, [ev.id])
+    # blow past every rung of the opening ladder
+    ev.home_score, ev.away_score, ev.live_step = 4, 3, 10
+    await live._reprice_alts(session, ev, "soccer", 0.5)
+    open_totals = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type == "alt_totals",
+                             Market.status == "open"))).scalars().all()
+    assert len(open_totals) >= 5
+    assert all(float(mm.line) >= 6 for mm in open_totals)
