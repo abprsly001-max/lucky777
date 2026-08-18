@@ -91,11 +91,15 @@ class TheOddsApiProvider(OddsProvider):
         live.sort(key=lambda s: self._rank(s["key"]))
         return live[: self.max_sports]
 
-    async def fetch_events(self) -> list[ProviderEvent]:
+    async def fetch_events(self, sport_keys: list[str] | None = None
+                           ) -> list[ProviderEvent]:
         now = datetime.now(timezone.utc)
         out: list[ProviderEvent] = []
         async with httpx.AsyncClient(timeout=20) as client:
-            for sport in await self._active_sports(client):
+            sports = await self._active_sports(client)
+            if sport_keys is not None:
+                sports = [s for s in sports if s["key"] in set(sport_keys)]
+            for sport in sports:
                 sk = sport["key"]
                 resp = await client.get(
                     f"{BASE}/sports/{sk}/odds",

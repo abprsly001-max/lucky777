@@ -87,9 +87,17 @@ async def upsert_event(session: AsyncSession, pe: ProviderEvent) -> Event:
     return ev
 
 
-async def sync(session: AsyncSession) -> dict:
+FEATURED_SPORTS = ["americanfootball_nfl", "americanfootball_ncaaf",
+                   "baseball_mlb", "basketball_nba", "basketball_wnba",
+                   "icehockey_nhl"]
+
+
+async def sync(session: AsyncSession, sport_keys: list[str] | None = None) -> dict:
     provider = get_provider()
-    events = await provider.fetch_events()
+    if sport_keys is not None and provider.name == "the_odds_api":
+        events = await provider.fetch_events(sport_keys=sport_keys)
+    else:
+        events = await provider.fetch_events()
     for pe in events:
         await upsert_event(session, pe)
     await session.commit()

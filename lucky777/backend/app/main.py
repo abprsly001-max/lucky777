@@ -33,9 +33,11 @@ async def _live_ticker():
     poll = max(30, settings.live_scores_poll_seconds)
     finals_every = max(poll, settings.finals_sweep_seconds)
     board_every = settings.board_sync_minutes * 60
+    featured_every = max(300, settings.featured_sync_minutes * 60)
     since_scores = poll                       # poll immediately on boot
     since_finals = finals_every
-    since_board = 0
+    since_board = board_every                 # full sync right after boot
+    since_featured = 0
     while True:
         await asyncio.sleep(settings.live_tick_seconds)
         try:
@@ -55,10 +57,19 @@ async def _live_ticker():
                         r = await ingest.sync_scores(session, include_finals=finals)
                     if board_every and since_board >= board_every:
                         since_board = 0
+                        since_featured = 0
                         from .sportsbook import ingest
                         b = await ingest.sync(session)
                         log.info("board re-synced from %s: %s events",
                                  b.get("provider"), b.get("events"))
+                    else:
+                        since_featured += settings.live_tick_seconds
+                        if since_featured >= featured_every:
+                            since_featured = 0
+                            from .sportsbook import ingest
+                            b = await ingest.sync(
+                                session, sport_keys=ingest.FEATURED_SPORTS)
+                            log.info("majors re-synced: %s events", b.get("events"))
                 else:
                     r = await live.tick(session)
                 from .racebook.router import tick as rb_tick

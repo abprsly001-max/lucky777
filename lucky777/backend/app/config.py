@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     board_sync_minutes: int = 30      # 0 = only re-sync from Game Admin
     odds_regions: str = "us"          # each extra region multiplies odds-call cost
     odds_max_sports: int = 24         # how many sports to pull; more = more credits
+    featured_sync_minutes: int = 10   # majors refresh cadence (NFL/MLB/NBA/NHL...)
     live_total_steps: int = 18      # ~6 minutes of real time per game at 20s ticks
 
     class Config:
