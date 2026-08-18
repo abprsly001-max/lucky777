@@ -185,6 +185,30 @@
     animation: vs-spin 0.24s linear infinite;
     will-change: transform;
   }
+  /* the landing: final symbols roll down into the window, overshoot, settle.
+     vs-land is for 3-row windows (8-item strip, finals on top),
+     vs-land1 for single-row windows */
+  @keyframes vs-land {
+    0% { transform: translateY(-62.5%); filter: blur(2px); }
+    65% { filter: blur(0); }
+    84% { transform: translateY(1.1%); }
+    100% { transform: translateY(0); filter: blur(0); }
+  }
+  .vs-land {
+    animation: vs-land 0.52s cubic-bezier(0.22, 0.65, 0.3, 1) forwards;
+    will-change: transform;
+  }
+  @keyframes vs-land1 {
+    0% { transform: translateY(-87.5%); filter: blur(2px); }
+    65% { filter: blur(0); }
+    84% { transform: translateY(1%); }
+    100% { transform: translateY(0); filter: blur(0); }
+  }
+  .vs-land1 {
+    animation: vs-land1 0.5s cubic-bezier(0.22, 0.65, 0.3, 1) forwards;
+    will-change: transform;
+  }
+
   /* the strip slamming to a stop: overshoot, sink, settle */
   @keyframes vs-stop {
     0% { transform: translateY(-16px); }

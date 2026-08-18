@@ -724,10 +724,21 @@ function SlotGame({ def, onBalance, onPlayed }: {
                         </div>
                       ))}
                   </div>
+                ) : popped[i] ? (
+                  <div className="vs-land1 absolute inset-x-0"
+                    onAnimationEnd={() => setPopped((pp) => {
+                      const n = [...pp] as typeof popped; n[i] = false; return n;
+                    })}>
+                    {[sym, ...Array.from({ length: 7 }, (_, j) =>
+                      slot.symbols[(i * 3 + j * 2 + 1) % slot.symbols.length])]
+                      .map((s, j) => (
+                        <div key={j} className="grid h-24 place-items-center">
+                          <SlotSymbol sym={s} />
+                        </div>
+                      ))}
+                  </div>
                 ) : (
-                  <span className={popped[i] ? "vs-stop inline-block" : ""}>
-                    <SlotSymbol sym={sym} />
-                  </span>
+                  <span><SlotSymbol sym={sym} /></span>
                 )}
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-black/60 to-transparent" />
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-black/60 to-transparent" />
@@ -2625,12 +2636,26 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }
   reel: number; col: string[]; spinning: boolean; justStopped: boolean;
   symbols: string[]; hotCells: Set<string>; hotLine: number | null;
 }) {
+  void justStopped;
+  // spin -> land (the finals roll down into the window and settle) -> idle
+  const [phase, setPhase] = useState<"idle" | "spin" | "land">("idle");
+  useEffect(() => {
+    if (spinning) setPhase("spin");
+    else setPhase((p) => (p === "spin" ? "land" : p));
+  }, [spinning]);
+
   // a fixed pseudo-random strip per reel so the blur reads as real symbols
   const strip = Array.from({ length: 9 }, (_, j) =>
     symbols[(reel * 5 + j * 3 + 1) % symbols.length]);
-  return (
-    <div className="relative overflow-hidden rounded-lg">
-      {spinning ? (
+  const shade = (
+    <>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1/4 bg-gradient-to-b from-black/60 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/4 bg-gradient-to-t from-black/60 to-transparent" />
+    </>
+  );
+  if (phase === "spin") {
+    return (
+      <div className="relative overflow-hidden rounded-lg">
         <div className="relative" style={{ aspectRatio: "1 / 3.18" }}>
           <div className="vs-strip absolute inset-x-0 blur-[2px]">
             {[...strip, ...strip].map((s, j) => (
@@ -2639,19 +2664,38 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }
               </div>
             ))}
           </div>
-          {/* window shading: the curve of the reel drum */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1/4 bg-gradient-to-b from-black/60 to-transparent" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/4 bg-gradient-to-t from-black/60 to-transparent" />
+          {shade}
         </div>
-      ) : (
-        <div className={`grid gap-1.5 ${justStopped ? "vs-stop" : ""}`}>
-          {col.map((sym, row) => (
-            <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
-              hot={hotCells.has(`${reel}-${row}`)}
-              dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
-          ))}
+      </div>
+    );
+  }
+  if (phase === "land") {
+    // 8-item strip, finals on top: rolls from the fillers down onto the finals
+    return (
+      <div className="relative overflow-hidden rounded-lg">
+        <div className="relative" style={{ aspectRatio: "1 / 3.18" }}>
+          <div className="vs-land absolute inset-x-0"
+            onAnimationEnd={() => setPhase("idle")}>
+            {[...col, ...strip.slice(0, 5)].map((s, j) => (
+              <div key={j} className="mb-1.5 w-full">
+                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false} />
+              </div>
+            ))}
+          </div>
+          {shade}
         </div>
-      )}
+      </div>
+    );
+  }
+  return (
+    <div className="relative overflow-hidden rounded-lg">
+      <div className="grid gap-1.5">
+        {col.map((sym, row) => (
+          <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
+            hot={hotCells.has(`${reel}-${row}`)}
+            dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -3366,41 +3410,65 @@ function Plinko({ def, onBalance, onPlayed }: {
   const [stake, setStake] = useState("10");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [ball, setBall] = useState<{ row: number; x: number } | null>(null);
+  const [ball, setBall] = useState<{ x: number; y: number } | null>(null);
+  const [trail, setTrail] = useState<{ x: number; y: number }[]>([]);
   const [landed, setLanded] = useState<number | null>(null);
   const [last, setLast] = useState<{ multiplier: string; payout: string } | null>(null);
 
   const table = def.tables[String(rows)]?.[risk] ?? [];
-
-  async function drop() {
-    setErr(""); setBusy(true); setLast(null); setLanded(null);
-    try {
-      const r = await api.plinkoDrop(stake, rows, risk);
-      onBalance(r.balance);
-      // walk the real path down the board, one row at a time
-      let x = 0;
-      for (let i = 0; i < r.path.length; i++) {
-        x += r.path[i];
-        const fx = x;
-        window.setTimeout(() => setBall({ row: i + 1, x: fx }), 90 * (i + 1));
-      }
-      window.setTimeout(() => {
-        setBall(null);
-        setLanded(r.bucket);
-        setLast({ multiplier: r.multiplier, payout: r.payout });
-        onPlayed();
-        setBusy(false);
-      }, 90 * (r.path.length + 2));
-    } catch (e: any) {
-      setErr(e.message); setBusy(false);
-    }
-  }
 
   // board geometry: viewBox units
   const W = 340, PAD = 22;
   const stepY = (200 - 20) / rows;
   const stepX = (W - PAD * 2) / rows;
   const px = (row: number, i: number) => W / 2 + (i - row / 2) * stepX;
+
+  async function drop() {
+    setErr(""); setBusy(true); setLast(null); setLanded(null);
+    try {
+      const r = await api.plinkoDrop(stake, rows, risk);
+      onBalance(r.balance);
+      // one continuous fall: gravity within each hop, the sideways kick
+      // arriving late — the moment the ball clips the peg
+      const bWidthL = (W - PAD * 2) / (rows + 1);
+      const pts: { x: number; y: number }[] = [{ x: W / 2, y: 4 }];
+      let acc = 0;
+      for (let i = 0; i < r.path.length; i++) {
+        acc += r.path[i];
+        pts.push({ x: px(i + 1, acc), y: 14 + (i + 1) * stepY - 4.5 });
+      }
+      pts.push({ x: PAD + r.bucket * bWidthL + bWidthL / 2, y: 214 });
+      const segDur = Math.max(70, 1500 / rows);
+      const total = segDur * (pts.length - 1);
+      const t0 = performance.now();
+      const frame = (t: number) => {
+        const el = Math.min(t - t0, total);
+        const idx = Math.min(Math.floor(el / segDur), pts.length - 2);
+        const u = Math.min((el - idx * segDur) / segDur, 1);
+        const a = pts[idx], b = pts[idx + 1];
+        const uy = u * u;                               // gravity
+        const ux0 = u < 0.5 ? 0 : (u - 0.5) / 0.5;      // deflect off the peg
+        const ux = ux0 * ux0 * (3 - 2 * ux0);           // smoothstep
+        const pos = { x: a.x + (b.x - a.x) * ux, y: a.y + (b.y - a.y) * uy };
+        setBall(pos);
+        setTrail((tr) => [pos, ...tr].slice(0, 5));
+        if (el < total) {
+          requestAnimationFrame(frame);
+        } else {
+          window.setTimeout(() => {
+            setBall(null); setTrail([]);
+            setLanded(r.bucket);
+            setLast({ multiplier: r.multiplier, payout: r.payout });
+            onPlayed();
+            setBusy(false);
+          }, 60);
+        }
+      };
+      requestAnimationFrame(frame);
+    } catch (e: any) {
+      setErr(e.message); setBusy(false);
+    }
+  }
 
   const pegs: React.ReactNode[] = [];
   for (let r = 1; r <= rows; r++) {
@@ -3426,9 +3494,16 @@ function Plinko({ def, onBalance, onPlayed }: {
       <div className="rounded-xl border border-white/10 bg-gradient-to-b from-base-900 to-base-950 p-2">
         <svg viewBox={`0 0 ${W} 232`} className="w-full">
           {pegs}
+          {trail.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={4.2 - i * 0.7}
+              fill="#f0b429" opacity={0.16 - i * 0.03} />
+          ))}
           {ball && (
-            <circle cx={px(ball.row, ball.x)} cy={14 + ball.row * stepY - stepY / 2}
-              r="5" fill="#f0b429" />
+            <>
+              <circle cx={ball.x} cy={ball.y} r="7" fill="rgba(240,180,41,0.25)" />
+              <circle cx={ball.x} cy={ball.y} r="4.6" fill="#f7ca5e" />
+              <circle cx={ball.x - 1.3} cy={ball.y - 1.5} r="1.4" fill="#fff7e0" opacity="0.9" />
+            </>
           )}
           {table.map((m, i) => (
             <g key={i}>
