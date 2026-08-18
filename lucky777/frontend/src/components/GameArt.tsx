@@ -28,6 +28,18 @@ export const SYMBOL_GLYPH: Record<string, { g: string; cls?: string }> = {
   idol: { g: "🏺" },
   berry: { g: "🍓" },
   plum: { g: "🍑" },
+  reaper: { g: "💀" },
+  coffin: { g: "⚰️" },
+  candle: { g: "🕯️" },
+  potion: { g: "🧪" },
+  sun: { g: "🌅" },
+  palm: { g: "🌴" },
+  cassette: { g: "📼" },
+  shades: { g: "🕶️" },
+  buffalo: { g: "🦬" },
+  eagle: { g: "🦅" },
+  wolf: { g: "🐺" },
+  cactus: { g: "🌵" },
   A: { g: "A", cls: "slot-gold" },
   K: { g: "K", cls: "slot-gold" },
   Q: { g: "Q", cls: "slot-gold" },
@@ -322,6 +334,9 @@ const SLOT_THEMES: Record<string, { from: string; to: string; id: string; window
   "vslot:golden7s": { id: "vg", from: "#3a2606", to: "#140d02", window: ["seven", "wild", "seven"] },
   "vslot:aztec": { id: "va", from: "#2d3a06", to: "#0e1402", window: ["mask", "scatter", "jaguar"] },
   "vslot:fruitblitz": { id: "vf", from: "#3f0642", to: "#160217", window: ["berry", "wild", "melon"] },
+  "vslot:reaper": { id: "vr", from: "#1c1030", to: "#08040f", window: ["reaper", "wild", "coffin"] },
+  "vslot:neonnights": { id: "vn", from: "#062a3a", to: "#02101a", window: ["sun", "wild", "palm"] },
+  "vslot:buffalo": { id: "vb", from: "#3a1d06", to: "#140a02", window: ["buffalo", "wild", "eagle"] },
 };
 
 export default function GameArt({ k }: { k: string }) {

@@ -136,6 +136,7 @@ export interface VSlotDef {
   pays: Record<string, Record<string, string>>;
   free_spins: { trigger: number; count: number; mult: number };
   lines: number;
+  buy_cost?: number;
 }
 
 export interface PlinkoDef {
@@ -259,6 +260,10 @@ export const api = {
               scatters: number; mult: number; win: string;
               free_spins_left: number; bonus_total: string; balance: string }>(
       "/api/casino/vslots/spin", { method: "POST", body: JSON.stringify({ machine, stake }) }),
+  vslotBuy: (machine: string, stake: string) =>
+    request<{ round_id: number; machine: string; cost: string;
+              free_spins_left: number; mult: number; balance: string }>(
+      "/api/casino/vslots/buy", { method: "POST", body: JSON.stringify({ machine, stake }) }),
   vslotActive: () =>
     request<{ active: { round_id: number; machine: string; free_spins_left: number;
                         bonus_total: string; stake: string } | null }>(

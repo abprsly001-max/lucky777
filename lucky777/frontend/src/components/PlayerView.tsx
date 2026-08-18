@@ -689,22 +689,42 @@ const VS_LINES: number[][] = [
   [1,1,0,1,1],[1,1,2,1,1],[0,2,0,2,0],[2,0,2,0,2],[0,2,2,2,0],
 ];
 
-function VSCell({ sym, hot, dim }: { sym: string; hot: boolean; dim: boolean }) {
+const VS_THEMES: Record<string, { bg: string; frame: string }> = {
+  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40" },
+  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40" },
+  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40" },
+  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40" },
+  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40" },
+  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40" },
+};
+
+function VSCell({ sym, hot, dim, tier }: {
+  sym: string; hot: boolean; dim: boolean; tier: number;
+}) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
   const inner = spec.cls === "slot-bar" ? (
     <span className="rounded btn-gold px-1.5 py-0.5 font-sans text-[10px] font-black text-base-900">BAR</span>
   ) : sym === "wild" ? (
-    <span className="rounded-md btn-gold px-1.5 py-0.5 font-sans text-[11px] font-black tracking-tight text-base-900">WILD</span>
+    <span className="rounded-md btn-gold px-1 py-0.5 font-sans text-[10px] font-black tracking-tight text-base-900">WILD</span>
   ) : spec.cls === "slot-gold" ? (
-    <span className="bg-gradient-to-b from-gold-400 to-gold-600 bg-clip-text text-2xl font-black text-transparent">{spec.g}</span>
+    <span className="bg-gradient-to-b from-slate-200 to-slate-500 bg-clip-text text-xl font-black text-transparent">{spec.g}</span>
   ) : (
-    <span className={sym === "scatter" ? "text-2xl drop-shadow-[0_0_6px_rgba(240,180,41,0.8)]" : "text-2xl"}>{spec.g}</span>
+    <span className={sym === "scatter"
+      ? "text-2xl drop-shadow-[0_0_8px_rgba(240,180,41,0.9)]"
+      : tier <= 2 ? "text-2xl drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]" : "text-2xl"}>{spec.g}</span>
   );
+  // rarity frames: wild/scatter glow gold, the theme highs get a rich ring,
+  // mids a cool one, card royals stay quiet
+  const frame = sym === "wild" || sym === "scatter"
+    ? "border-gold/60 bg-gradient-to-b from-gold/15 to-base-900"
+    : tier <= 2 ? "border-amber-400/40 bg-gradient-to-b from-amber-500/10 to-base-900"
+    : tier <= 4 ? "border-sky-400/30 bg-gradient-to-b from-sky-500/10 to-base-900"
+    : "border-white/10 bg-base-900/90";
   return (
     <div className={`grid aspect-square place-items-center rounded-md border transition ${
-      hot ? "border-gold bg-gold/20 shadow-gold"
-        : dim ? "border-white/5 bg-base-900 opacity-40"
-        : "border-white/10 bg-base-900"}`}>
+      hot ? "border-gold bg-gold/25 shadow-gold"
+        : dim ? `${frame} opacity-35`
+        : frame}`}>
       {inner}
     </div>
   );
@@ -750,6 +770,17 @@ function VideoSlot({ def, onBalance, onPlayed }: {
     }, 900);
     return () => window.clearInterval(iv);
   }, [wins]);
+
+  async function buyBonus() {
+    setErr(""); setBusy(true); setBanner(null);
+    try {
+      const r = await api.vslotBuy(vs.machine, stake);
+      onBalance(r.balance);
+      setFreeLeft(r.free_spins_left);
+      setBonusTotal("0");
+      setBanner(`⭐ BONUS BOUGHT — ${r.free_spins_left} FREE SPINS at ${r.mult}× ⭐`);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
 
   async function doSpin() {
     setErr(""); setBusy(true); setWins([]); setLastWin(null); setBanner(null);
@@ -824,12 +855,14 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className="rounded-xl border border-gold/25 bg-gradient-to-b from-base-900 to-base-950 p-3">
+        <div className={`rounded-xl border bg-gradient-to-b p-3 ${
+          (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
+          (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
           <div className="grid grid-cols-5 gap-1.5">
             {grid.map((col, reel) => (
               <div key={reel} className={`grid gap-1.5 ${live[reel] ? "blur-[1.5px]" : ""}`}>
                 {col.map((sym, row) => (
-                  <VSCell key={row} sym={sym}
+                  <VSCell key={row} sym={sym} tier={vs.symbols.indexOf(sym)}
                     hot={hotCells.has(`${reel}-${row}`)}
                     dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
                 ))}
@@ -850,6 +883,12 @@ function VideoSlot({ def, onBalance, onPlayed }: {
               disabled={busy || freeLeft > 0}
               className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
           </label>
+          {freeLeft === 0 && (vs as any).buy_cost && (
+            <button onClick={buyBonus} disabled={busy}
+              className="rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/15 px-3 py-2.5 text-[11px] font-black uppercase leading-tight tracking-wide text-fuchsia-300 hover:bg-fuchsia-500/25 disabled:opacity-50">
+              Buy Bonus<br /><span className="font-mono">{(vs as any).buy_cost}× bet</span>
+            </button>
+          )}
           <button onClick={doSpin} disabled={busy}
             className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
             {freeLeft > 0 ? `Free Spin (${freeLeft})` : "Spin"}

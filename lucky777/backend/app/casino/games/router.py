@@ -83,6 +83,7 @@ def _vslot_entries(mn: str, mx: str) -> list[dict]:
                          for k, _, p in m["symbols"] if p},
                 "free_spins": fs,
                 "lines": len(VS.LINES),
+                "buy_cost": VS.buy_cost_mult(m),
             },
         })
     return out
@@ -773,6 +774,60 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
             "win": str(from_micros(win)),
             "free_spins_left": fs_conf["count"] if out.triggered else 0,
             "bonus_total": "0",
+            "balance": str(from_micros(balance))}
+
+
+class VSlotBuy(BaseModel):
+    stake: str
+    machine: str
+    idempotency_key: str | None = None
+
+
+@router.post("/vslots/buy")
+async def vslot_buy(req: VSlotBuy, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    """Bonus Buy: pay the printed multiple of your bet, go straight to the
+    free spins. Priced off the exact bonus EV, so the house holds its usual
+    cut on the buy too."""
+    from . import videoslots as VS
+    _casino_gate(user)
+    if req.machine not in VS.VIDEO_SLOTS:
+        raise HTTPException(404, "no such machine")
+    open_rnd = (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user.id,
+                                  CasinoRound.game == "vslot",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+    if open_rnd is not None:
+        raise HTTPException(409, "finish your open bonus first")
+
+    m = VS.VIDEO_SLOTS[req.machine]
+    stake_m = _stake_or_400(req.stake, user)
+    cost_mult = VS.buy_cost_mult(m)
+    total = stake_m * cost_mult
+    cap = (user.wager_limit_micros or to_micros(Decimal(settings.max_bet_credits)))
+    if total > cap:
+        raise HTTPException(400,
+            f"that buy costs {cost_mult}x your bet — over your wager limit; lower the bet")
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    rnd = CasinoRound(game="vslot", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      outcome="bonus_bought",
+                      detail=json.dumps({"machine": req.machine,
+                                         "spins_left": m["free_spins"]["count"],
+                                         "total_win": 0, "bought": True}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, total, "vslot_spin", rnd.id,
+                              f"vs:{rnd.id}:buy:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "machine": req.machine,
+            "cost": str(from_micros(total)),
+            "free_spins_left": m["free_spins"]["count"],
+            "mult": m["free_spins"]["mult"],
             "balance": str(from_micros(balance))}
 
 

@@ -42,3 +42,11 @@ def test_scatters_trigger_the_bonus():
     for n in range(400):
         r = V.spin("s", "c", n, "golden7s")
         assert r.triggered == (r.scatters >= trig)
+
+
+def test_bonus_buy_is_priced_at_the_house_edge_or_worse():
+    for key, m in V.VIDEO_SLOTS.items():
+        cost = V.buy_cost_mult(m)
+        rtp_of_buy = V.bonus_ev_per_stake(m) / cost
+        assert rtp_of_buy <= V.TARGET_RTP, (key, rtp_of_buy)
+        assert cost >= 5, key            # a bonus never sells cheap
