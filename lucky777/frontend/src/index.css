@@ -45,6 +45,13 @@
     color: rgb(100 116 139 / 0.9);
   }
 
+  /* native dropdown lists: readable on every phone, light or dark mode */
+  select option,
+  select optgroup {
+    background-color: #ffffff;
+    color: #0b0e14;
+  }
+
   button {
     transition: background-color 0.15s, color 0.15s, border-color 0.15s,
       box-shadow 0.15s, opacity 0.15s, transform 0.1s, filter 0.15s;

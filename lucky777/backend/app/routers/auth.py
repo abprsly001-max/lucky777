@@ -53,3 +53,16 @@ async def me(user: User = Depends(current_user), session: AsyncSession = Depends
     return TokenResponse(access_token="", username=user.username,
                          balance=str(from_micros(balance)), is_admin=bool(user.is_admin),
                          is_master=bool(user.is_master), is_active=bool(user.is_active))
+
+
+class PasswordCheck(BaseModel):
+    password: str
+
+
+@router.post("/verify")
+async def verify(body: PasswordCheck, user: User = Depends(current_user)):
+    """The classic confirm-your-wagers gate: re-enter your password to place.
+    Rate-limited by nature (a wrong guess costs a full round trip)."""
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(401, "wrong password")
+    return {"ok": True}

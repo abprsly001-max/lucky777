@@ -29,6 +29,8 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
   const [presetTier, setPresetTier] = useState(0);
   const [liveOnly, setLiveOnly] = useState(false);
   const [propsOnly, setPropsOnly] = useState(false);
+  const [classicPicks, setClassicPicks] = useState<Map<number, ClassicPick>>(new Map());
+  const [confirming, setConfirming] = useState(false);
   const [liveDetail, setLiveDetail] = useState<number | null>(null);
   const [fig, setFig] = useState<{ balance: string; available: string } | null>(null);
 
@@ -270,7 +272,8 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
 
   // ------------------------------------------------------ phase 2: the board --
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+    <div className={(!liveOnly && !propsOnly && preset === "auto")
+      ? "grid gap-5" : "grid gap-5 lg:grid-cols-[1fr_320px]"}>
       <div className="min-w-0">
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <button onClick={() => { setPhase("pick"); setView("board"); setLiveOnly(false); setPropsOnly(false); }}
@@ -309,6 +312,24 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         ) : (
           propsOnly ? (
           <PropsBoard events={shownEvents} selected={selected} onPick={toggle} />
+        ) : (!liveOnly && preset === "auto") ? (
+          confirming ? (
+            <ConfirmWagers picks={classicPicks} setPicks={setClassicPicks}
+              onBack={() => setConfirming(false)}
+              onPlaced={(b) => { onBalance(b); refreshBets();
+                api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
+                  .catch(() => {}); }} />
+          ) : (
+            <ClassicBoard events={shownEvents} picks={classicPicks}
+              onToggle={(pk) => setClassicPicks((old) => {
+                const n = new Map(old);
+                n.has(pk.sel.id) ? n.delete(pk.sel.id) : n.set(pk.sel.id, pk);
+                return n;
+              })}
+              onRefresh={() => loadEvents()}
+              onContinue={() => setConfirming(true)}
+              onProps={() => setPropsOnly(true)} />
+          )
         ) : liveOnly ? (
           (() => {
             const liveEvs = shownEvents.filter((e) => e.status === "live");
@@ -349,16 +370,18 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         ))}
       </div>
 
+      {!(!liveOnly && !propsOnly && preset === "auto") && (
       <div id="bet-slip-anchor">
         <BetSlip slip={slip} setSlip={setSlip} preset={preset} presetTier={presetTier}
           onPlaced={(b) => { onBalance(b); refreshBets();
             api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
               .catch(() => {}); }} />
       </div>
+      )}
 
       {/* phones: the slip lives below the fold — give every pick a visible
           landing and a one-tap way down to it */}
-      {slip.length > 0 && view === "board" && (
+      {slip.length > 0 && view === "board" && !(!liveOnly && !propsOnly && preset === "auto") && (
         <button
           onClick={() => document.getElementById("bet-slip-anchor")
             ?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -1389,6 +1412,379 @@ function PropsBoard({ events, selected, onPick }: {
         Props settle automatically from the official box score after the game. If a
         player's stat can't be confirmed within 24 hours, the wager is refunded.
       </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------- the classic board ----
+// The old-school PPH look: white paper board, red row labels, checkboxes,
+// a green Continue, and a confirm page with Risk/Win amounts and a password
+// gate. Straight wagers only -- every checked box is its own ticket.
+
+const half = (v: string | number) => String(v).replace(".5", "½");
+
+function teamAbbr(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.map((w) => w[0]).join("").slice(0, 3).toUpperCase();
+}
+
+function teamHue(name: string): number {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return h;
+}
+
+function TeamMark({ name }: { name: string }) {
+  return (
+    <span className="inline-grid h-6 w-6 shrink-0 place-items-center rounded-full text-[9px] font-black text-white"
+      style={{ backgroundColor: `hsl(${teamHue(name)} 55% 38%)` }}>
+      {teamAbbr(name)}
+    </span>
+  );
+}
+
+export interface ClassicPick {
+  ev: SbEvent; m: SbMarket; sel: SbSelection;
+  label: string; sub: string;
+  mode: "risk" | "win"; amount: string;
+}
+
+function pickLabel(ev: SbEvent, m: SbMarket, sel: SbSelection): [string, string] {
+  const team = sel.key === "home" ? ev.home : sel.key === "away" ? ev.away : null;
+  if (m.type === "h2h") return [`${team ?? "Draw"} ${sel.american}`, "Moneyline"];
+  if (m.type === "spreads") {
+    const ln = sel.key === "home" ? Number(m.line) : -Number(m.line);
+    return [`${team} ${half(fmtLine(ln))} ${sel.american}`, "Spread"];
+  }
+  if (m.type === "totals")
+    return [`${sel.key === "over" ? "Over" : "Under"} ${half(m.line ?? "")} ${sel.american}`,
+            `Total · ${ev.home} v ${ev.away}`];
+  return [`${sel.name} ${sel.american}`, m.name];
+}
+
+function ClassicCheck({ ev, m, sel, picks, onToggle, children }: {
+  ev: SbEvent; m: SbMarket; sel: SbSelection | undefined;
+  picks: Map<number, ClassicPick>; onToggle: (p: ClassicPick) => void;
+  children?: React.ReactNode;
+}) {
+  if (!sel) return <div className="flex-1" />;
+  const on = picks.has(sel.id);
+  const [label, sub] = pickLabel(ev, m, sel);
+  return (
+    <label className="flex flex-1 cursor-pointer items-center justify-end gap-2 py-0.5 select-none">
+      <span className="font-mono text-[15px] font-bold text-slate-900">{children}</span>
+      <input type="checkbox" checked={on}
+        onChange={() => onToggle({ ev, m, sel, label, sub, mode: "risk", amount: "100" })}
+        className="h-5 w-5 rounded border-slate-400 accent-red-700" />
+    </label>
+  );
+}
+
+function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps }: {
+  events: SbEvent[]; picks: Map<number, ClassicPick>;
+  onToggle: (p: ClassicPick) => void;
+  onRefresh: () => void; onContinue: () => void; onProps?: () => void;
+}) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const upcoming = events.filter((e) => e.status === "scheduled")
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
+  if (upcoming.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-8 text-center text-sm text-slate-500">
+        Nothing on the board for these leagues right now.
+      </div>
+    );
+  }
+
+  const row = (labelTag: string, left: React.ReactNode, right: React.ReactNode,
+               shade = false) => (
+    <div className={`flex items-center gap-2 border-t border-slate-300 px-2 ${
+      shade ? "bg-slate-200/60" : "bg-white"}`}>
+      <span className="w-8 shrink-0 text-[13px] font-black text-red-700">{labelTag}</span>
+      <div className="flex flex-1 items-center justify-end border-r border-slate-300 pr-2">{left}</div>
+      <div className="flex flex-1 items-center justify-end pl-1">{right}</div>
+    </div>
+  );
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-100 pb-14 shadow-card">
+      {upcoming.map((ev) => {
+        const kick = new Date(ev.starts_at + (ev.starts_at.endsWith("Z") ? "" : "Z"));
+        const spread = ev.markets.find((m) => m.type === "spreads");
+        const total = ev.markets.find((m) => m.type === "totals");
+        const ml = ev.markets.find((m) => m.type === "h2h");
+        const sel = (m: SbMarket | undefined, key: string) =>
+          m?.selections.find((x) => x.key === key);
+        const mains = new Set([spread?.id, total?.id, ml?.id]);
+        const rest = ev.markets.filter((m) => !mains.has(m.id)
+          && !m.type.startsWith("prop:") && !m.type.startsWith("alt_"));
+        const draw = sel(ml, "draw");
+        return (
+          <div key={ev.id}>
+            {/* date strip */}
+            <div className="flex items-center justify-between bg-slate-800 px-3 py-1.5 text-[13px] text-white">
+              <span className="flex items-center gap-2">
+                <span>🕐</span>
+                {kick.toLocaleDateString(undefined, { weekday: "long", month: "numeric", day: "numeric" })}{" "}
+                {kick.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <span className="flex items-center gap-1.5 font-semibold">
+                {ev.icon} {ev.competition}
+              </span>
+            </div>
+            {/* team header */}
+            <div className="flex items-center gap-2 bg-white px-2 pt-2 pb-1">
+              <span className="w-8 shrink-0" />
+              <div className="flex flex-1 items-center justify-center gap-2 border-r border-slate-300">
+                <span className="text-[15px] font-bold text-slate-900">{ev.home}</span>
+                <TeamMark name={ev.home} />
+              </div>
+              <div className="flex flex-1 items-center justify-center gap-2">
+                <span className="text-[15px] font-bold text-slate-900">{ev.away}</span>
+                <TeamMark name={ev.away} />
+              </div>
+            </div>
+
+            {spread && row("SP",
+              <ClassicCheck ev={ev} m={spread} sel={sel(spread, "home")} picks={picks} onToggle={onToggle}>
+                {half(fmtLine(Number(spread.line)))} {sel(spread, "home")?.american}
+              </ClassicCheck>,
+              <ClassicCheck ev={ev} m={spread} sel={sel(spread, "away")} picks={picks} onToggle={onToggle}>
+                {half(fmtLine(-Number(spread.line)))} {sel(spread, "away")?.american}
+              </ClassicCheck>, true)}
+
+            {ml && row("ML",
+              <ClassicCheck ev={ev} m={ml} sel={sel(ml, "home")} picks={picks} onToggle={onToggle}>
+                {sel(ml, "home")?.american}
+              </ClassicCheck>,
+              <ClassicCheck ev={ev} m={ml} sel={sel(ml, "away")} picks={picks} onToggle={onToggle}>
+                {sel(ml, "away")?.american}
+              </ClassicCheck>)}
+
+            {draw && ml && row("DR",
+              <ClassicCheck ev={ev} m={ml} sel={draw} picks={picks} onToggle={onToggle}>
+                Draw {draw.american}
+              </ClassicCheck>,
+              <div className="flex-1" />, true)}
+
+            {total && row("TP",
+              <ClassicCheck ev={ev} m={total} sel={sel(total, "over")} picks={picks} onToggle={onToggle}>
+                O {half(total.line ?? "")} {sel(total, "over")?.american}
+              </ClassicCheck>,
+              <ClassicCheck ev={ev} m={total} sel={sel(total, "under")} picks={picks} onToggle={onToggle}>
+                U {half(total.line ?? "")} {sel(total, "under")?.american}
+              </ClassicCheck>, !draw)}
+
+            {open.has(ev.id) && rest.map((m) => (
+              <div key={m.id} className="flex items-center gap-2 border-t border-slate-300 bg-slate-50 px-2 py-0.5">
+                <span className="w-20 shrink-0 text-[10px] font-bold uppercase text-slate-500">{m.name}</span>
+                <div className="flex flex-1 flex-wrap justify-end gap-x-4">
+                  {m.selections.map((x) => (
+                    <ClassicCheck key={x.id} ev={ev} m={m} sel={x} picks={picks} onToggle={onToggle}>
+                      <span className="text-[12px]">{x.name}</span> {x.american}
+                    </ClassicCheck>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2 border-t border-slate-300 bg-slate-200 px-2 py-1.5">
+              {rest.length > 0 && (
+                <button onClick={() => setOpen((o) => {
+                  const n = new Set(o); n.has(ev.id) ? n.delete(ev.id) : n.add(ev.id); return n;
+                })}
+                  className="rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600">
+                  Event {open.has(ev.id) ? "−" : `+${rest.length}`}
+                </button>
+              )}
+              {onProps && (
+                <button onClick={onProps}
+                  className="rounded bg-red-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600">
+                  PROPS +
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* sticky action bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-7xl gap-1 p-2">
+        <button onClick={onRefresh}
+          className="flex-1 rounded-md bg-red-800 py-3 text-base font-bold text-white shadow-pop hover:bg-red-700">
+          Refresh
+        </button>
+        <button onClick={onContinue} disabled={picks.size === 0}
+          className="flex-1 rounded-md bg-green-600 py-3 text-base font-bold text-white shadow-pop hover:bg-green-500 disabled:opacity-60">
+          Continue{picks.size > 0 ? ` (${picks.size})` : ""}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------ confirm your plays --
+function ConfirmWagers({ picks, setPicks, onBack, onPlaced }: {
+  picks: Map<number, ClassicPick>;
+  setPicks: (p: Map<number, ClassicPick>) => void;
+  onBack: () => void;
+  onPlaced: (balance: string) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [placed, setPlaced] = useState<string[]>([]);
+
+  const list = [...picks.values()];
+  const upd = (id: number, patch: Partial<ClassicPick>) => {
+    const n = new Map(picks);
+    n.set(id, { ...n.get(id)!, ...patch });
+    setPicks(n);
+  };
+  const remove = (id: number) => {
+    const n = new Map(picks); n.delete(id); setPicks(n);
+  };
+
+  const nums = (p: ClassicPick): { risk: number; win: number } => {
+    const dec = Number(p.sel.odds);
+    const amt = Number(p.amount) || 0;
+    if (p.mode === "risk") return { risk: amt, win: amt * (dec - 1) };
+    return { risk: dec > 1 ? amt / (dec - 1) : 0, win: amt };
+  };
+  const totals = list.reduce((a, p) => {
+    const n = nums(p); return { risk: a.risk + n.risk, win: a.win + n.win };
+  }, { risk: 0, win: 0 });
+
+  async function confirm() {
+    setErr(""); setBusy(true);
+    try {
+      await api.authVerify(password);
+    } catch {
+      setErr("Wrong password — check it and try again.");
+      setBusy(false);
+      return;
+    }
+    const done: string[] = [];
+    let lastBalance = "";
+    for (const p of list) {
+      const { risk } = nums(p);
+      if (risk <= 0) { setErr(`${p.label}: enter an amount.`); setBusy(false); return; }
+      try {
+        const r = await api.sbPlace([{ selection_id: p.sel.id, odds: p.sel.odds }],
+          risk.toFixed(2), true, "auto");
+        lastBalance = r.balance;
+        done.push(`✓ ${p.label} — risking ${risk.toFixed(2)}`);
+        remove(p.sel.id);
+      } catch (e: any) {
+        setErr(`${p.label}: ${e.message}`);
+        break;
+      }
+    }
+    setPlaced(done);
+    if (lastBalance) onPlaced(lastBalance);
+    setBusy(false);
+  }
+
+  if (list.length === 0 && placed.length > 0) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-100 shadow-card">
+        <div className="bg-green-600 px-4 py-3 text-center text-lg font-bold text-white">
+          Wagers accepted
+        </div>
+        <div className="space-y-1 p-4 text-sm text-slate-800">
+          {placed.map((s, i) => <div key={i}>{s}</div>)}
+        </div>
+        <div className="p-3">
+          <button onClick={onBack}
+            className="w-full rounded-md bg-slate-800 py-3 text-sm font-bold text-white hover:bg-slate-700">
+            Back to the board
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-100 shadow-card">
+      <div className="flex items-baseline justify-between px-4 pt-3 text-slate-900">
+        <span className="text-[15px] font-bold">Please confirm your wagers</span>
+        <span className="flex gap-8 text-sm font-semibold"><span>Risk</span><span>Win</span></span>
+      </div>
+
+      {list.map((p) => {
+        const n = nums(p);
+        return (
+          <div key={p.sel.id} className="mx-2 mt-2 rounded border border-slate-300 bg-white">
+            <div className="flex items-start justify-between px-2 pt-1.5">
+              <button onClick={() => remove(p.sel.id)}
+                className="rounded bg-slate-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-red-700">
+                Delete
+              </button>
+              <span className="flex gap-6 font-mono text-sm font-bold text-slate-900">
+                <span>${n.risk.toFixed(2)}</span><span>${n.win.toFixed(2)}</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 px-2 pt-1">
+              <TeamMark name={p.sel.key === "away" ? p.ev.away : p.ev.home} />
+              <span className="text-[15px] font-bold text-green-700">{p.label}</span>
+            </div>
+            <div className="px-2 pb-1 text-[13px] font-semibold text-slate-700">
+              {p.ev.competition} — {new Date(p.ev.starts_at + (p.ev.starts_at.endsWith("Z") ? "" : "Z"))
+                .toLocaleString(undefined, { month: "long", day: "numeric", year: "numeric",
+                                             hour: "numeric", minute: "2-digit" })}
+            </div>
+            <div className="flex items-center gap-3 border-t border-slate-200 px-2 py-2">
+              {(["risk", "win"] as const).map((mode) => (
+                <label key={mode} className="flex cursor-pointer items-center gap-1.5">
+                  <input type="radio" checked={p.mode === mode}
+                    onChange={() => upd(p.sel.id, { mode })}
+                    className="h-4 w-4 accent-slate-700" />
+                  <span className="text-sm font-bold capitalize text-slate-800">{mode}</span>
+                  <input value={p.mode === mode ? p.amount : (mode === "risk" ? n.risk.toFixed(0) : n.win.toFixed(0))}
+                    onChange={(e) => upd(p.sel.id, { mode, amount: e.target.value })}
+                    inputMode="decimal"
+                    className="w-20 rounded border border-slate-400 bg-white px-2 py-1 text-center font-mono text-sm text-slate-900" />
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="flex items-baseline justify-between px-4 pt-3 text-sm font-bold text-slate-900">
+        <span>{list.length} Total Wagers</span>
+        <span className="flex gap-6 font-mono">
+          <span>${totals.risk.toFixed(2)}</span><span>${totals.win.toFixed(2)}</span>
+        </span>
+      </div>
+
+      <div className="px-4 pb-4 pt-3">
+        <div className="pb-2 text-center">
+          <div className="text-lg font-bold text-slate-900">Please review your wagers carefully!!!</div>
+          <div className="text-sm text-slate-600">Enter your password to confirm your plays</div>
+        </div>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password is required" autoComplete="current-password"
+          className="mb-3 w-full rounded-full border border-slate-400 bg-white px-4 py-2.5 text-center text-sm text-slate-900" />
+        {err && (
+          <div className="mb-3 rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700">{err}</div>
+        )}
+        {placed.length > 0 && (
+          <div className="mb-3 rounded border border-green-400 bg-green-50 px-3 py-2 text-sm text-green-800">
+            {placed.map((s, i) => <div key={i}>{s}</div>)}
+          </div>
+        )}
+        <button onClick={confirm} disabled={busy || list.length === 0 || !password}
+          className="mb-2 w-full rounded-md bg-green-600 py-3 text-base font-bold text-white hover:bg-green-500 disabled:opacity-60">
+          {busy ? "Placing…" : "Confirm"}
+        </button>
+        <button onClick={() => { setPicks(new Map()); onBack(); }}
+          className="w-full rounded-md bg-red-700 py-3 text-base font-bold text-white hover:bg-red-600">
+          Clear All
+        </button>
+      </div>
     </div>
   );
 }

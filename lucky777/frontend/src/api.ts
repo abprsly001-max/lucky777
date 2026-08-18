@@ -162,6 +162,9 @@ export const api = {
   login: (username: string, password: string) =>
     request<Session>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => request<Session>("/api/auth/me"),
+  authVerify: (password: string) =>
+    request<{ ok: boolean }>("/api/auth/verify", {
+      method: "POST", body: JSON.stringify({ password }) }),
 
   balance: () => request<{ balance: string; free_play: string }>("/api/wallet/balance"),
   myFigures: (weeks_back = 0) =>
