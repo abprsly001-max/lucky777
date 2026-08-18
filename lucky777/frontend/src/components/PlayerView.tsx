@@ -1536,7 +1536,11 @@ function CardFlip({ onBalance, onPlayed }: { onBalance: (b: string) => void; onP
                 c === "r" ? "border-red-400/60 bg-red-500/15"
                 : c === "b" ? "border-slate-400/40 bg-slate-500/15"
                 : "border-white/10 bg-base-900/80"}`}>
-                {c === "r" ? "❤️" : c === "b" ? "🖤" : "🂠"}
+                {c ? <span key={`${i}-${c}`} className="deal-flip inline-block">
+                       <span className="deal-front">{c === "r" ? "❤️" : "🖤"}</span>
+                       <span className="deal-back">🂠</span>
+                     </span>
+                   : "🂠"}
               </div>
             );
           })}
