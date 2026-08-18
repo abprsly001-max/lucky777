@@ -443,6 +443,12 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
                 : null;
             })()}
             {game === "crash" && <Crash onBalance={onBalance} onPlayed={load} />}
+            {game === "tumble" && (() => {
+              const def = lobby?.games.find((g) => g.key === "tumble");
+              return def?.tumble
+                ? <SugarBlast def={def.tumble} onBalance={onBalance} onPlayed={load} />
+                : null;
+            })()}
             {game === "dragon" && (() => {
               const def = lobby?.games.find((g) => g.key === "dragon");
               return def?.dragon
@@ -824,6 +830,198 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         Every coin pays its printed value instantly. Land {def.trigger}+ coins to lock
         them and start {def.respins} respins — any new coin resets the counter.
         Fill the grid for the {def.grand}× Grand on top.
+      </p>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ sugar blast ----
+const TB_FRUIT: Record<string, string> = {
+  banana: "🍌", grape: "🍇", melon: "🍉", plum: "🍑", apple: "🍎", heart: "❤️",
+};
+const TB_GEM: Record<string, string> = {
+  blue: "from-sky-300 to-blue-600",
+  green: "from-emerald-300 to-emerald-600",
+  purple: "from-fuchsia-300 to-violet-600",
+};
+
+function TumbleCell({ sym, hot, popping }: { sym: string; hot: boolean; popping: boolean }) {
+  const base = `grid aspect-square place-items-center rounded-lg border transition ${
+    popping ? "scale-0 opacity-0 duration-300"
+    : hot ? "border-gold bg-gold/20 shadow-gold duration-150"
+    : "border-white/10 bg-white/5 duration-150"}`;
+  if (sym === "scatter") {
+    return <div className={base}><span className="text-xl sm:text-2xl drop-shadow-[0_0_8px_rgba(240,180,41,0.9)]">🍭</span></div>;
+  }
+  if (sym.startsWith("bomb:")) {
+    return (
+      <div className={base}>
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-b from-rose-400 to-red-700 border border-white/40 font-mono text-[10px] font-black text-white drop-shadow sm:h-9 sm:w-9">
+          {sym.split(":")[1]}x
+        </span>
+      </div>
+    );
+  }
+  const gem = TB_GEM[sym];
+  return (
+    <div className={base}>
+      {gem ? (
+        <span className={`h-7 w-7 rounded-xl bg-gradient-to-br ${gem} shadow-inner border border-white/30 sm:h-8 sm:w-8`}>
+          <span className="ml-1 mt-1 block h-2 w-2 rounded-full bg-white/50" />
+        </span>
+      ) : (
+        <span className="text-xl sm:text-2xl">{TB_FRUIT[sym] ?? sym}</span>
+      )}
+    </div>
+  );
+}
+
+function SugarBlast({ def, onBalance, onPlayed }: {
+  def: import("../api").TumbleDef;
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [grid, setGrid] = useState<string[]>(Array.from({ length: 30 }, (_, i) =>
+    def.symbols[i % def.symbols.length]));
+  const [hotSyms, setHotSyms] = useState<Set<string>>(new Set());
+  const [popSyms, setPopSyms] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [spinBlur, setSpinBlur] = useState(false);
+  const [runWin, setRunWin] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const [fsLeft, setFsLeft] = useState(0);
+  const [bonusTotal, setBonusTotal] = useState("0");
+  const inBonus = fsLeft > 0;
+
+  useEffect(() => {
+    api.tumbleActive().then((r) => {
+      if (r.active) {
+        setFsLeft(r.active.free_spins_left);
+        setBonusTotal(r.active.bonus_total);
+        setStake(String(Number(r.active.stake)));
+        setMsg(`🍭 FREE SPINS — ${r.active.free_spins_left} left`);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  async function play(kind: "spin" | "buy") {
+    setErr(""); setBusy(true); setMsg(null); setRunWin(null);
+    setHotSyms(new Set()); setPopSyms(new Set()); setSpinBlur(true);
+    try {
+      const r = kind === "buy" ? await api.tumbleBuy(stake) : await api.tumbleSpin(stake);
+      await sleep(450);
+      setSpinBlur(false);
+      // play the cascade: grids[i] -> highlight steps[i] -> pop -> grids[i+1]
+      setGrid(r.grids[0]);
+      let acc = 0;
+      for (let i = 0; i < r.steps.length; i++) {
+        await sleep(420);
+        const syms = new Set(r.steps[i].map((w) => w.sym));
+        acc += r.steps[i].reduce((s, w) => s + Number(w.pay), 0);
+        setHotSyms(syms);
+        setRunWin((acc * Number(stake)).toFixed(2));
+        await sleep(520);
+        setPopSyms(syms);
+        await sleep(330);
+        setHotSyms(new Set()); setPopSyms(new Set());
+        setGrid(r.grids[i + 1]);
+      }
+      await sleep(250);
+      onBalance(r.balance);
+      onPlayed();
+      setFsLeft(r.free_spins_left);
+      setBonusTotal(r.bonus_total);
+      const bombs = Number(r.bomb_sum);
+      if (r.free_spin) {
+        if (Number(r.win) > 0 && bombs > 0)
+          setMsg(`💣 BOMBS x${bombs} — win ${money(r.win)}! ${r.free_spins_left} spins left`);
+        else if (Number(r.win) > 0)
+          setMsg(`+${money(r.win)} · ${r.free_spins_left} spins left`);
+        else setMsg(r.free_spins_left > 0
+          ? `${r.free_spins_left} free spins left` : null);
+        if (r.free_spins_left <= 0)
+          setMsg(`🍬 BONUS OVER — total ${money(r.bonus_total)}`);
+      } else if (r.triggered) {
+        setMsg(`🍭 ${r.scatters} LOLLIPOPS — ${def.free_spins} FREE SPINS!${
+          Number(r.win) > 0 ? ` Plus ${money(r.win)} now` : ""}`);
+      } else if (Number(r.win) > 0) {
+        setMsg(`WIN ${money(r.win)}`);
+      }
+    } catch (e: any) {
+      setSpinBlur(false); setErr(e.message);
+    } finally { setBusy(false); }
+  }
+
+  const cellHot = (s: string) => hotSyms.has(s);
+  const cellPop = (s: string) => popSyms.has(s);
+  const bet = Number(stake) || 0;
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">🍭 Sugar Blast</h3>
+        <span className="font-mono text-[10px] text-slate-500">Max win {Number(def.max_win).toLocaleString()}×</span>
+      </div>
+
+      {inBonus && (
+        <div className="mb-2 flex items-center justify-between rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/10 px-3 py-1.5 text-xs font-bold text-fuchsia-300">
+          <span>FREE SPINS · {fsLeft} left · bombs multiply wins</span>
+          <span className="font-mono">{money(bonusTotal)}</span>
+        </div>
+      )}
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">
+          {msg}
+        </div>
+      )}
+
+      {/* the candy grid: 6 columns of 5 */}
+      <div className="relative rounded-xl border border-pink-500/30 bg-gradient-to-b from-[#2e0a33] via-[#180419] to-black p-2.5">
+        {runWin && (
+          <div className="pointer-events-none absolute inset-x-0 top-1 z-10 text-center">
+            <span className="rounded-full bg-black/70 px-3 py-1 font-mono text-sm font-black text-gold">
+              +{runWin}
+            </span>
+          </div>
+        )}
+        <div className={`grid grid-cols-6 gap-1 sm:gap-1.5 ${spinBlur ? "animate-pulse opacity-40" : ""}`}>
+          {Array.from({ length: 30 }, (_, i) => {
+            // backend grid is column-major (col*5+row); render row-major
+            const col = i % 6, row = Math.floor(i / 6);
+            const s = grid[col * 5 + row];
+            return <TumbleCell key={`${col}-${row}-${s}`} sym={s}
+              hot={cellHot(s)} popping={cellPop(s)} />;
+          })}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-end gap-2">
+        <label className="text-xs">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+          <input value={stake} onChange={(e) => setStake(e.target.value)}
+            disabled={busy || inBonus}
+            className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+        </label>
+        {!inBonus && (
+          <button onClick={() => play("buy")} disabled={busy}
+            className="ml-auto rounded-lg border border-gold/50 bg-base-900 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-gold hover:bg-base-700 disabled:opacity-50">
+            Buy Bonus · {money(String(Number(def.buy_cost) * bet))}
+          </button>
+        )}
+        <button onClick={() => play("spin")} disabled={busy}
+          className={`${inBonus ? "ml-auto animate-pulse" : ""} rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50`}>
+          {inBonus ? `Free Spin (${fsLeft})` : "Spin"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+        No paylines — {def.min_match}+ of a symbol anywhere on the {def.cols}×{def.rows} grid
+        pays. Wins explode and fresh symbols tumble in while the chain lasts.
+        4+ lollipops award {def.free_spins} free spins where bomb multipliers
+        stick and sum. Buy Bonus goes straight to the free spins.
       </p>
     </div>
   );

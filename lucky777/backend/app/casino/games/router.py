@@ -102,6 +102,30 @@ def _dragon_entry(mn: str, mx: str) -> list[dict]:
     }]
 
 
+def _tumble_entry(mn: str, mx: str) -> list[dict]:
+    from . import tumble as T
+    return [{
+        "key": "tumble", "name": "Sugar Blast", "icon": "🍭",
+        "category": "slots", "min": mn, "max": mx,
+        "rules": "No paylines — 8 or more of a symbol anywhere pays. Wins "
+                 "explode and fresh symbols tumble in while the chain lasts. "
+                 "4+ lollipops award 10 free spins where multiplier bombs "
+                 "stick and SUM to multiply the spin's win.",
+        "tumble": {
+            "cols": T.COLS, "rows": T.ROWS, "min_match": T.MIN_MATCH,
+            "free_spins": T.FREE_SPINS,
+            "symbols": [s for s, _, _ in T.SYMBOLS],
+            "pays": {s: [str((Decimal(t) * T._SCALE).quantize(Decimal('0.01')))
+                         for t in tiers] for s, _, tiers in T.SYMBOLS},
+            "scatter_pays": {str(k): str((v * T._SCALE).quantize(Decimal('0.01')))
+                             for k, v in T.SCATTER_PAYS.items()},
+            "bombs": [v for v, _ in T.BOMB_VALUES],
+            "buy_cost": str(T.BUY_COST_MULT),
+            "max_win": str(T.MAX_WIN_MULT),
+        },
+    }]
+
+
 def _vslot_entries(mn: str, mx: str) -> list[dict]:
     from . import videoslots as VS
     out = []
@@ -152,7 +176,8 @@ async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
     mx = settings.max_bet_credits
     return {
-        "games": _dragon_entry(settings.min_bet_credits, mx)
+        "games": _tumble_entry(settings.min_bet_credits, mx)
+                 + _dragon_entry(settings.min_bet_credits, mx)
                  + _holdspin_entry(settings.min_bet_credits, mx)
                  + _vslot_entries(settings.min_bet_credits, mx)
                  + _slot_entries(settings.min_bet_credits, mx) + [
@@ -989,6 +1014,159 @@ async def dragon_active(user: User = Depends(current_user),
     if rnd is None:
         return {"active": None}
     return {"active": _dr_public(rnd, json.loads(rnd.detail))}
+
+
+# ------------------------------------------------------------ sugar blast ----
+class TumbleReq(BaseModel):
+    stake: str
+    idempotency_key: str | None = None
+
+
+async def _tb_open(session, user_id: int):
+    return (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user_id,
+                                  CasinoRound.game == "tumble",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+
+
+def _tb_capped(stake_m: int, win: int, already: int) -> int:
+    """Round wins stop at the printed max; the cap is on total round pay."""
+    from . import tumble as T
+    room = payout_micros(stake_m, T.MAX_WIN_MULT) - already
+    return max(0, min(win, room))
+
+
+def _tb_result_public(r) -> dict:
+    return {"grids": r.grids, "steps": r.steps, "scatters": r.scatters,
+            "bomb_sum": str(r.bomb_sum), "total_mult": str(r.total),
+            "triggered": r.triggered}
+
+
+@router.post("/tumble/spin")
+async def tumble_spin(req: TumbleReq, user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import tumble as T
+    _casino_gate(user)
+    open_rnd = await _tb_open(session, user.id)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+
+    if open_rnd is not None:
+        # a FREE spin: bombs stick and multiply the chain's win
+        st = json.loads(open_rnd.detail)
+        r = T.free_spin(pair.server_seed, pair.client_seed, nonce)
+        win = payout_micros(open_rnd.stake_micros, T.fs_win(r))
+        win = _tb_capped(open_rnd.stake_micros, win, st["total_win"])
+        st["spins_left"] -= 1
+        st["total_win"] += win
+        wallet = await ledger.wallet_for(session, user.id)
+        house = await ledger.house_account(session)
+        await _pay(session, house, wallet, win, "tumble_spin", open_rnd.id,
+                   f"tb:{open_rnd.id}:fs:{st['spins_left']}")
+        if st["spins_left"] <= 0:
+            open_rnd.status = "settled"
+            open_rnd.outcome = "bonus_done"
+            open_rnd.payout_micros = st["total_win"]
+            open_rnd.settled_at = datetime.now(timezone.utc)
+        open_rnd.detail = json.dumps(st)
+        balance = await ledger.balance_of(session, wallet.id)
+        await session.commit()
+        return {"round_id": open_rnd.id, "free_spin": True,
+                **_tb_result_public(r),
+                "win": str(from_micros(win)),
+                "free_spins_left": st["spins_left"],
+                "bonus_total": str(from_micros(st["total_win"])),
+                "balance": str(from_micros(balance))}
+
+    # a PAID spin
+    stake_m = _stake_or_400(req.stake, user)
+    r = T.base_spin(pair.server_seed, pair.client_seed, nonce)
+    win = payout_micros(stake_m, r.total + T.scatter_pay(r.scatters))
+    win = _tb_capped(stake_m, win, 0)
+
+    rnd = CasinoRound(game="tumble", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m,
+                      status="open" if r.triggered else "settled",
+                      outcome="bonus" if r.triggered
+                              else ("win" if win > 0 else "lose"),
+                      payout_micros=None if r.triggered else win,
+                      detail=json.dumps({
+                          "spins_left": T.FREE_SPINS if r.triggered else 0,
+                          "total_win": win}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "tumble_spin", rnd.id,
+                                  f"tb:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "tumble_spin", rnd.id,
+               f"tb:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "free_spin": False,
+            **_tb_result_public(r),
+            "win": str(from_micros(win)),
+            "free_spins_left": T.FREE_SPINS if r.triggered else 0,
+            "bonus_total": "0",
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/tumble/buy")
+async def tumble_buy(req: TumbleReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    """Buy Bonus: pay the printed multiple, the scatters are guaranteed."""
+    from . import tumble as T
+    _casino_gate(user)
+    if await _tb_open(session, user.id):
+        raise HTTPException(409, "finish your free spins first")
+    stake_m = _stake_or_400(req.stake, user)
+    total = payout_micros(stake_m, T.BUY_COST_MULT)
+    cap = (user.wager_limit_micros or to_micros(Decimal(settings.max_bet_credits)))
+    if total > cap:
+        raise HTTPException(400,
+            f"that buy costs {T.BUY_COST_MULT}x your bet — over your wager "
+            f"limit; lower the bet")
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    r = T.buy_spin(pair.server_seed, pair.client_seed, nonce)
+    win = payout_micros(stake_m, r.total + T.scatter_pay(r.scatters))
+    win = _tb_capped(stake_m, win, 0)
+
+    rnd = CasinoRound(game="tumble", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      outcome="bonus_bought",
+                      detail=json.dumps({"spins_left": T.FREE_SPINS,
+                                         "total_win": win, "bought": True}))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, total, "tumble_spin", rnd.id,
+                                  f"tb:{rnd.id}:buy:{key}")
+    await _pay(session, house, wallet, win, "tumble_spin", rnd.id,
+               f"tb:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "free_spin": False,
+            **_tb_result_public(r),
+            "cost": str(from_micros(total)),
+            "win": str(from_micros(win)),
+            "free_spins_left": T.FREE_SPINS,
+            "bonus_total": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/tumble/active")
+async def tumble_active(user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    rnd = await _tb_open(session, user.id)
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    return {"active": {"round_id": rnd.id,
+                       "stake": str(from_micros(rnd.stake_micros)),
+                       "free_spins_left": st["spins_left"],
+                       "bonus_total": str(from_micros(st["total_win"]))}}
 
 
 # ----------------------------------------------------------- video slots ----

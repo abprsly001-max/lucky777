@@ -385,7 +385,24 @@ function DragonArt() {
   );
 }
 
+function TumbleArt() {
+  return (
+    <Frame id="tb" from="#3d0a44" to="#150218">
+      <text x="70" y="58" fontSize="34" textAnchor="middle">🍇</text>
+      <text x="128" y="44" fontSize="30" textAnchor="middle">🍉</text>
+      <text x="192" y="60" fontSize="34" textAnchor="middle">🍎</text>
+      <text x="250" y="42" fontSize="30" textAnchor="middle">🍌</text>
+      <text x="160" y="92" fontSize="44" textAnchor="middle">🍭</text>
+      <text x="95" y="98" fontSize="26" textAnchor="middle">❤️</text>
+      <text x="228" y="96" fontSize="26" textAnchor="middle">🍑</text>
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill="url(#tb-gold)" fontFamily="Arial Black, sans-serif">TUMBLE WINS</text>
+    </Frame>
+  );
+}
+
 export default function GameArt({ k }: { k: string }) {
+  if (k === "tumble") return <TumbleArt />;
   if (k === "dragon") return <DragonArt />;
   if (k === "holdspin") return <PiggyArt />;
   if (k === "blackjack") return <BlackjackArt />;

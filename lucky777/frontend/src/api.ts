@@ -154,6 +154,21 @@ export interface DragonDef {
   jackpots: Record<string, string>; buy_cost: string;
 }
 
+export interface TumbleDef {
+  cols: number; rows: number; min_match: number; free_spins: number;
+  symbols: string[]; pays: Record<string, string[]>;
+  scatter_pays: Record<string, string>; bombs: string[];
+  buy_cost: string; max_win: string;
+}
+
+export interface TumbleSpin {
+  round_id: number; free_spin: boolean;
+  grids: string[][]; steps: { sym: string; count: number; pay: string }[][];
+  scatters: number; bomb_sum: string; total_mult: string; triggered: boolean;
+  win: string; free_spins_left: number; bonus_total: string; balance: string;
+  cost?: string;
+}
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -218,7 +233,8 @@ export const api = {
     request<{ games: { key: string; name: string; icon: string; category: string;
                        min: string; max: string; edge: string; rules: string;
                        slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef;
-                       holdspin?: HoldSpinDef; dragon?: DragonDef }[] }>(
+                       holdspin?: HoldSpinDef; dragon?: DragonDef;
+                       tumble?: TumbleDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -286,6 +302,15 @@ export const api = {
       "/api/casino/holdspin/respin", { method: "POST" }),
   holdspinActive: () =>
     request<{ active: HoldSpinState | null }>("/api/casino/holdspin/active"),
+  tumbleSpin: (stake: string) =>
+    request<TumbleSpin>("/api/casino/tumble/spin",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  tumbleBuy: (stake: string) =>
+    request<TumbleSpin>("/api/casino/tumble/buy",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  tumbleActive: () =>
+    request<{ active: { round_id: number; stake: string; free_spins_left: number;
+                        bonus_total: string } | null }>("/api/casino/tumble/active"),
   dragonSpin: (stake: string) =>
     request<HoldSpinState & { coins: Record<string, string>; win: string;
               triggered: boolean; balance: string }>(
