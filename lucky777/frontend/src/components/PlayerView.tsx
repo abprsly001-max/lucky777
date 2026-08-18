@@ -457,6 +457,38 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
             })()}
             {game === "dragontiger" && <DragonTiger onBalance={onBalance} onPlayed={load} />}
             {game === "hilo" && <HiLo onBalance={onBalance} onPlayed={load} />}
+            {game === "lucky7" && <Lucky7 onBalance={onBalance} onPlayed={load} />}
+            {game === "rps" && <RPS onBalance={onBalance} onPlayed={load} />}
+            {game === "darts" && (() => {
+              const def = lobby?.games.find((g) => g.key === "darts");
+              return def?.darts ? <Darts def={def.darts} onBalance={onBalance} onPlayed={load} /> : null;
+            })()}
+            {game === "prism" && (() => {
+              const def = lobby?.games.find((g) => g.key === "prism");
+              return def?.prism ? <Prism def={def.prism} onBalance={onBalance} onPlayed={load} /> : null;
+            })()}
+            {game === "penalty" && (() => {
+              const def = lobby?.games.find((g) => g.key === "penalty");
+              return def?.ladder ? <LadderGame def={def.ladder} onBalance={onBalance} onPlayed={load}
+                skin={{ title: "⚽ Penalty Shootout", step: "Shoot", icon: "⚽",
+                        bust: "🧤 SAVED — the run is over",
+                        frame: "border-green-500/25",
+                        bg: "from-[#0a2e10] via-[#051708] to-black" }} /> : null;
+            })()}
+            {game === "penguin" && (() => {
+              const def = lobby?.games.find((g) => g.key === "penguin");
+              return def?.ladder ? <LadderGame def={def.ladder} onBalance={onBalance} onPlayed={load}
+                skin={{ title: "🐧 Penguin Dash", step: "Hop", icon: "🐧",
+                        bust: "🐻‍❄️ SPLASH — the bear got you",
+                        frame: "border-cyan-400/25",
+                        bg: "from-[#042837] via-[#02141d] to-black" }} /> : null;
+            })()}
+            {game === "acey" && <AceyDucey onBalance={onBalance} onPlayed={load} />}
+            {game === "war" && <WarGame onBalance={onBalance} onPlayed={load} />}
+            {game === "flip" && <CardFlip onBalance={onBalance} onPlayed={load} />}
+            {game === "bus" && <RideTheBus onBalance={onBalance} onPlayed={load} />}
+            {game === "suitlink" && <SuitLink onBalance={onBalance} onPlayed={load} />}
+            {game === "hcf" && <HighCardFlush onBalance={onBalance} onPlayed={load} />}
             {game === "tumble" && (() => {
               const def = lobby?.games.find((g) => g.key === "tumble");
               return def?.tumble
@@ -846,6 +878,753 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         Fill the grid for the {def.grand}× Grand on top.
       </p>
     </div>
+  );
+}
+
+// --------------------------------------------------------- quick-game kit ----
+function QuickShell({ title, right, msg, err, children, controls, note }: {
+  title: string; right?: string; msg: string | null; err: string;
+  children: React.ReactNode; controls: React.ReactNode; note?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-bold text-slate-100">{title}</h3>
+        {right && <span className="font-mono text-[10px] text-slate-500">{right}</span>}
+      </div>
+      {msg && (
+        <div className="mb-2 rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">{msg}</div>
+      )}
+      {children}
+      <div className="mt-3 flex items-end gap-2">{controls}</div>
+      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      {note && <p className="mt-3 text-[10px] leading-relaxed text-slate-500">{note}</p>}
+    </div>
+  );
+}
+
+function BetInput({ stake, setStake, busy }: {
+  stake: string; setStake: (v: string) => void; busy: boolean;
+}) {
+  return (
+    <label className="text-xs">
+      <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
+      <input value={stake} onChange={(e) => setStake(e.target.value)} disabled={busy}
+        className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
+    </label>
+  );
+}
+
+const GOLD_BTN = "ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50";
+const PICK_BTN = (on: boolean) =>
+  `rounded-lg border py-2 text-xs font-bold transition ${
+    on ? "border-gold bg-gold/15 text-gold" : "border-white/10 bg-base-900 text-slate-400 hover:border-gold/40"}`;
+
+// ---------------------------------------------------------------- lucky 7 ----
+function Lucky7({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [bet, setBet] = useState("under");
+  const [dice, setDice] = useState<number[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const PIPS = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+
+  async function roll() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      for (let i = 0; i < 6; i++) {
+        setDice([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]);
+        await new Promise((r) => setTimeout(r, 90));
+      }
+      const r = await api.lucky7Roll(stake, bet);
+      setDice(r.dice); onBalance(r.balance); onPlayed();
+      setMsg(Number(r.payout) > 0
+        ? `${r.total} — ${bet.toUpperCase()} hits, paid ${money(r.payout)}`
+        : `${r.total} — no good`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="🎲 Lucky 7" msg={msg} err={err}
+      note="Two dice. Under or over 7 pays 1.3:1, exactly 7 pays 4.75:1."
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={roll} disabled={busy} className={GOLD_BTN}>Roll</button>
+      </>}>
+      <div className="grid h-32 place-items-center rounded-xl border border-amber-500/25 bg-gradient-to-b from-[#2e1a04] via-[#170d02] to-black">
+        <div className="flex items-center gap-3 text-6xl text-slate-100">
+          <span>{dice ? PIPS[dice[0]] : "⚀"}</span>
+          <span>{dice ? PIPS[dice[1]] : "⚅"}</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
+        {[["under", "Under 7 · 1.3:1"], ["seven", "Lucky 7 · 4.75:1"], ["over", "Over 7 · 1.3:1"]].map(([k, l]) => (
+          <button key={k} onClick={() => setBet(k)} disabled={busy} className={PICK_BTN(bet === k)}>{l}</button>
+        ))}
+      </div>
+    </QuickShell>
+  );
+}
+
+// -------------------------------------------------------------------- rps ----
+function RPS({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [last, setLast] = useState<{ p: string; h: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const G: Record<string, string> = { rock: "✊", paper: "✋", scissors: "✌️" };
+
+  async function throwMove(m: string) {
+    setErr(""); setBusy(true); setMsg(null); setLast(null);
+    try {
+      const r = await api.rpsThrow(stake, m);
+      setLast({ p: r.player, h: r.house });
+      onBalance(r.balance); onPlayed();
+      setMsg(r.result === "win" ? `House threw ${r.house} — you win ${money(r.payout)}`
+        : r.result === "push" ? "Tie — stake back" : `House threw ${r.house} — house wins`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="✊ Rock Paper Scissors" msg={msg} err={err}
+      note="Beat the house hand for 0.92:1; a tie pushes your stake back."
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <span className="ml-auto flex gap-1.5">
+          {Object.entries(G).map(([k, g]) => (
+            <button key={k} onClick={() => throwMove(k)} disabled={busy}
+              className="rounded-lg btn-gold px-4 py-2 text-2xl disabled:opacity-50">{g}</button>
+          ))}
+        </span>
+      </>}>
+      <div className="grid h-28 grid-cols-2 place-items-center rounded-xl border border-violet-500/25 bg-gradient-to-b from-[#1d1040] via-[#0d071d] to-black">
+        <div className="text-center">
+          <div className="text-4xl">{last ? G[last.p] : "❔"}</div>
+          <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">You</div>
+        </div>
+        <div className="text-center">
+          <div className="text-4xl">{last ? G[last.h] : "❔"}</div>
+          <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">House</div>
+        </div>
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------------ darts ----
+function Darts({ def, onBalance, onPlayed }: {
+  def: import("../api").DartsDef; onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [bet, setBet] = useState("middle");
+  const [landed, setLanded] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const RING_COLOR: Record<string, string> = {
+    bullseye: "fill-red-500", inner: "fill-gold", middle: "fill-emerald-500", outer: "fill-sky-600",
+  };
+
+  async function throwDart() {
+    setErr(""); setBusy(true); setMsg(null); setLanded(null);
+    try {
+      const r = await api.dartsThrow(stake, bet);
+      await new Promise((res) => setTimeout(res, 500));
+      setLanded(r.landed); onBalance(r.balance); onPlayed();
+      setMsg(Number(r.payout) > 0
+        ? `🎯 ${r.landed.toUpperCase()} — paid ${money(r.payout)}`
+        : `Landed ${r.landed} — no good`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  const rings = [["outer", 56], ["middle", 40], ["inner", 24], ["bullseye", 10]] as const;
+  return (
+    <QuickShell title="🎯 Darts" msg={msg} err={err}
+      note="Call your ring before the throw — tighter rings pay true odds."
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={throwDart} disabled={busy} className={GOLD_BTN}>Throw</button>
+      </>}>
+      <div className="grid place-items-center rounded-xl border border-red-500/25 bg-gradient-to-b from-[#2e0808] via-[#170404] to-black py-3">
+        <svg viewBox="0 0 120 120" className="h-36 w-36">
+          {rings.map(([r, rad]) => (
+            <circle key={r} cx="60" cy="60" r={rad}
+              className={`${RING_COLOR[r]} ${landed === r ? "opacity-100" : "opacity-40"}`}
+              stroke="#0b0e14" strokeWidth="2" />
+          ))}
+          {landed && <text x="60" y="14" textAnchor="middle" fontSize="12">🎯</text>}
+        </svg>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-1.5">
+        {def.rings.map(({ ring, mult }) => (
+          <button key={ring} onClick={() => setBet(ring)} disabled={busy} className={PICK_BTN(bet === ring)}>
+            {ring}<br /><span className="font-mono text-gold">{mult}x</span>
+          </button>
+        ))}
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------------ prism ----
+function Prism({ def, onBalance, onPlayed }: {
+  def: import("../api").PrismDef; onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [gem, setGem] = useState<{ g: string; m: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const GEM: Record<string, string> = {
+    shard: "🔹", topaz: "🔶", emerald: "🟢", sapphire: "🔷", diamond: "💎", dust: "✨",
+  };
+
+  async function spin() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const all = [...def.segments.map((s) => s.gem), "dust"];
+      for (let i = 0; i < 8; i++) {
+        setGem({ g: all[Math.floor(Math.random() * all.length)], m: "" });
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      const r = await api.prismSpin(stake);
+      setGem({ g: r.gem, m: r.multiplier });
+      onBalance(r.balance); onPlayed();
+      setMsg(Number(r.payout) > 0
+        ? `${r.gem.toUpperCase()} ${r.multiplier}x — paid ${money(r.payout)}`
+        : "Dust — nothing this time");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="💎 Prism" msg={msg} err={err}
+      note={"Land a gem and it pays its printed multiple: " +
+        def.segments.map((s) => `${s.gem} ${s.mult}x`).join(" · ")}
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={spin} disabled={busy} className={GOLD_BTN}>Spin</button>
+      </>}>
+      <div className="grid h-32 place-items-center rounded-xl border border-fuchsia-500/25 bg-gradient-to-b from-[#2c0a3a] via-[#150419] to-black">
+        <span className="text-6xl">{gem ? GEM[gem.g] ?? "✨" : "🔮"}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+        {def.segments.map((s) => (
+          <span key={s.gem} className="rounded bg-base-900/70 px-2 py-1 font-mono text-[10px] text-slate-300">
+            {GEM[s.gem]} {s.mult}x
+          </span>
+        ))}
+      </div>
+    </QuickShell>
+  );
+}
+
+// ---------------------------------------------------------- streak ladders ----
+function LadderGame({ def, skin, onBalance, onPlayed }: {
+  def: import("../api").LadderDef;
+  skin: { title: string; step: string; bust: string; icon: string; frame: string; bg: string };
+  onBalance: (b: string) => void; onPlayed: () => void;
+}) {
+  const levels = Object.keys(def.levels);
+  const [stake, setStake] = useState("10");
+  const [level, setLevel] = useState(levels[0]);
+  const [st, setSt] = useState<import("../api").LadderState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.ladderActive(def.game).then((r) => {
+      if (r.active) { setSt(r.active); setLevel(r.active.level); }
+    }).catch(() => {});
+  }, [def.game]);
+
+  const live = st && st.status === "open";
+  const conf = def.levels[live ? st!.level : level];
+
+  async function start() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const r = await api.ladderStart(def.game, stake, level);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function step() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.ladderStep(def.game, st.round_id);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      if (!r.survived) setMsg(skin.bust);
+      else if (r.outcome === "topped") setMsg(`🏆 ALL THE WAY — paid ${money(r.payout!)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cashout() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.ladderCashout(def.game, st.round_id);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout!)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title={skin.title} msg={msg} err={err}
+      right={live ? `${st!.multiplier}x locked` : undefined}
+      controls={!live ? <>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        {levels.length > 1 && (
+          <label className="text-xs">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Difficulty</span>
+            <select value={level} onChange={(e) => setLevel(e.target.value)} disabled={busy}
+              className="rounded-lg bg-base-700 px-2 py-2 text-sm text-slate-100 outline-none">
+              {levels.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </label>
+        )}
+        <button onClick={start} disabled={busy} className={GOLD_BTN}>Start</button>
+      </> : <>
+        <button onClick={cashout} disabled={busy || st!.step === 0}
+          className="rounded-lg border border-gold/50 bg-base-900 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-gold hover:bg-base-700 disabled:opacity-50">
+          Cash out {st!.multiplier}x
+        </button>
+        <button onClick={step} disabled={busy} className={GOLD_BTN}>
+          {skin.step}{st!.next_multiplier ? ` → ${st!.next_multiplier}x` : ""}
+        </button>
+      </>}>
+      <div className={`rounded-xl border ${skin.frame} bg-gradient-to-b ${skin.bg} p-3`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {conf.mults.map((m, i) => {
+            const stepN = i + 1;
+            const cleared = live ? stepN <= st!.step : false;
+            const next = live && stepN === st!.step + 1;
+            const dead = st?.outcome === "bust" && stepN === st!.step + 1;
+            return (
+              <div key={i} className={`grid min-w-[52px] flex-1 place-items-center rounded-md border px-1 py-1.5 transition ${
+                dead ? "border-red-500/60 bg-red-500/15"
+                : cleared ? "border-accent/50 bg-accent/10"
+                : next ? "border-gold/60 bg-gold/10 animate-pulse"
+                : "border-white/10 bg-base-900/70"}`}>
+                <span className="text-sm">{dead ? "💀" : cleared ? skin.icon : ""}</span>
+                <span className={`font-mono text-[10px] font-bold ${
+                  cleared ? "text-accent" : next ? "text-gold" : "text-slate-500"}`}>{m}x</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------- acey ducey ----
+function AceyDucey({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [hand, setHand] = useState<{ cards: string[]; rid: number;
+    between: string; outside: string } | null>(null);
+  const [third, setThird] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.aceyActive().then((r) => {
+      if (r.active) setHand({ cards: r.active.cards, rid: r.active.round_id,
+        between: r.active.between_mult, outside: r.active.outside_mult });
+    }).catch(() => {});
+  }, []);
+
+  async function deal() {
+    setErr(""); setBusy(true); setMsg(null); setThird(null);
+    try {
+      const r = await api.aceyStart(stake);
+      setHand({ cards: r.cards, rid: r.round_id,
+        between: r.between_mult, outside: r.outside_mult });
+      onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function choose(side: string) {
+    if (!hand) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.aceyChoose(hand.rid, side);
+      setThird(r.third); setHand(null);
+      onBalance(r.balance); onPlayed();
+      setMsg(r.hit ? `${r.third} — ${side.toUpperCase()} hits ${r.multiplier}x, paid ${money(r.payout)}`
+        : `${r.third} — no good`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="🎴 Acey Ducey" msg={msg} err={err}
+      note="Two cards up — call the third strictly between or strictly outside at true odds. A boundary card loses either way."
+      controls={!hand ? <>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={deal} disabled={busy} className={GOLD_BTN}>Deal</button>
+      </> : <>
+        {Number(hand.between) > 0 && (
+          <button onClick={() => choose("between")} disabled={busy}
+            className="flex-1 rounded-lg border border-accent/50 bg-accent/10 py-2.5 text-sm font-black text-accent hover:bg-accent/20 disabled:opacity-50">
+            Between · {hand.between}x
+          </button>
+        )}
+        {Number(hand.outside) > 0 && (
+          <button onClick={() => choose("outside")} disabled={busy}
+            className="flex-1 rounded-lg border border-sky-400/50 bg-sky-500/10 py-2.5 text-sm font-black text-sky-300 hover:bg-sky-500/20 disabled:opacity-50">
+            Outside · {hand.outside}x
+          </button>
+        )}
+      </>}>
+      <div className="flex items-center justify-center gap-3 rounded-xl border border-indigo-500/25 bg-gradient-to-b from-[#141040] via-[#0a071d] to-black py-4">
+        {hand ? <PlayingCard c={hand.cards[0]} /> : <PlayingCard c="??" />}
+        <span className="grid h-16 w-11 place-items-center rounded-lg border border-dashed border-gold/40 text-xl text-gold/70">
+          {third ? <PlayingCard c={third} /> : "?"}
+        </span>
+        {hand ? <PlayingCard c={hand.cards[1]} /> : <PlayingCard c="??" />}
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------- casino war ----
+function WarGame({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [cards, setCards] = useState<{ p: string; d: string } | null>(null);
+  const [warCards, setWarCards] = useState<{ p: string; d: string } | null>(null);
+  const [tieRid, setTieRid] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.warActive().then((r) => {
+      if (r.active) {
+        setCards({ p: r.active.player, d: r.active.dealer });
+        setTieRid(r.active.round_id);
+        setStake(String(Number(r.active.stake)));
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function deal() {
+    setErr(""); setBusy(true); setMsg(null); setWarCards(null);
+    try {
+      const r = await api.warDeal(stake);
+      setCards({ p: r.player, d: r.dealer });
+      onBalance(r.balance); onPlayed();
+      if (r.tie) { setTieRid(r.round_id); setMsg("⚔ TIE — go to war or surrender"); }
+      else setMsg(Number(r.payout) > 0 ? `You win — paid ${money(r.payout)}` : "House takes it");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function goWar() {
+    if (tieRid == null) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.warGo(tieRid);
+      setWarCards({ p: r.war_player, d: r.war_dealer });
+      setTieRid(null); onBalance(r.balance); onPlayed();
+      setMsg(r.outcome === "war_win" ? `⚔ WAR WON — paid ${money(r.payout)}` : "⚔ War lost — both stakes gone");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function surrender() {
+    if (tieRid == null) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.warSurrender(tieRid);
+      setTieRid(null); onBalance(r.balance); onPlayed();
+      setMsg(`Surrendered — half back, ${money(r.payout)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="⚔ War" msg={msg} err={err}
+      note="High card wins even money, ace low. On a tie: surrender for half back, or double your stake and go to war — win it and collect on both."
+      controls={tieRid == null ? <>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={deal} disabled={busy} className={GOLD_BTN}>Deal</button>
+      </> : <>
+        <button onClick={surrender} disabled={busy}
+          className="flex-1 rounded-lg border border-white/10 bg-base-900 py-2.5 text-xs font-bold text-slate-300 hover:bg-base-700 disabled:opacity-50">
+          Surrender · ½ back
+        </button>
+        <button onClick={goWar} disabled={busy}
+          className="flex-1 rounded-lg btn-gold py-2.5 text-sm font-black uppercase text-base-900 disabled:opacity-50">
+          WAR · +{money(stake)}
+        </button>
+      </>}>
+      <div className="grid grid-cols-2 place-items-center gap-2 rounded-xl border border-red-500/25 bg-gradient-to-b from-[#2e0a12] via-[#170408] to-black py-4">
+        <div className="text-center">
+          <div className="flex gap-1">{cards && <PlayingCard c={cards.p} />}{warCards && <PlayingCard c={warCards.p} />}{!cards && <PlayingCard c="??" />}</div>
+          <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">You</div>
+        </div>
+        <div className="text-center">
+          <div className="flex gap-1">{cards && <PlayingCard c={cards.d} />}{warCards && <PlayingCard c={warCards.d} />}{!cards && <PlayingCard c="??" />}</div>
+          <div className="mt-1 text-[10px] font-bold uppercase text-slate-500">House</div>
+        </div>
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------ 10 card flip ----
+function CardFlip({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [st, setSt] = useState<import("../api").FlipState | null>(null);
+  const [done, setDone] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.flipActive().then((r) => { if (r.active) { setSt(r.active); setDone(false); } }).catch(() => {});
+  }, []);
+
+  async function start() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const r = await api.flipStart(stake);
+      setSt(r); setDone(false);
+      if (r.balance) onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function flip() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.flipFlip(st.round_id);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      if (r.outcome === "bust") { setDone(true); setMsg("🖤 Black — the run is over"); }
+      else if (r.outcome === "cleared") { setDone(true); setMsg(`❤️ ALL FIVE REDS — paid ${money(r.payout!)}`); }
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cashout() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.flipCashout(st.round_id);
+      setDone(true); onBalance(r.balance); onPlayed();
+      setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  const flipped = st?.flipped ?? [];
+  return (
+    <QuickShell title="🃏 10 Card Flip" msg={msg} err={err}
+      right={!done && st ? `${st.multiplier}x locked` : undefined}
+      note="Ten cards, five red, five black. Every red flipped multiplies at the true odds of the cards left; one black ends the run."
+      controls={done ? <>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={start} disabled={busy} className={GOLD_BTN}>Start</button>
+      </> : <>
+        <button onClick={cashout} disabled={busy || flipped.length === 0}
+          className="rounded-lg border border-gold/50 bg-base-900 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-gold hover:bg-base-700 disabled:opacity-50">
+          Cash out {st!.multiplier}x
+        </button>
+        <button onClick={flip} disabled={busy || (st?.reds_left ?? 0) === 0} className={GOLD_BTN}>
+          Flip{st?.next_multiplier ? ` → ${st.next_multiplier}x` : ""}
+        </button>
+      </>}>
+      <div className="rounded-xl border border-slate-500/25 bg-gradient-to-b from-[#1c2030] via-[#0d0f18] to-black p-3">
+        <div className="grid grid-cols-5 gap-1.5">
+          {Array.from({ length: 10 }, (_, i) => {
+            const c = flipped[i];
+            return (
+              <div key={i} className={`grid h-14 place-items-center rounded-lg border text-2xl transition ${
+                c === "r" ? "border-red-400/60 bg-red-500/15"
+                : c === "b" ? "border-slate-400/40 bg-slate-500/15"
+                : "border-white/10 bg-base-900/80"}`}>
+                {c === "r" ? "❤️" : c === "b" ? "🖤" : "🂠"}
+              </div>
+            );
+          })}
+        </div>
+        {!done && st && (
+          <p className="mt-2 text-center font-mono text-[10px] text-slate-400">
+            {st.reds_left} red · {st.blacks_left} black remaining
+          </p>
+        )}
+      </div>
+    </QuickShell>
+  );
+}
+
+// ------------------------------------------------------------ ride the bus ----
+function RideTheBus({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [st, setSt] = useState<import("../api").BusState | null>(null);
+  const [done, setDone] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const STAGE_LABEL: Record<string, string> = {
+    color: "Red or Black?", hilo: "Higher or Lower?", inout: "Inside or Outside?", suit: "Pick the Suit",
+  };
+  const OPT_LABEL: Record<string, string> = {
+    red: "🔴 Red", black: "⚫ Black", higher: "▲ Higher", lower: "▼ Lower",
+    inside: "◇ Inside", outside: "◈ Outside", s: "♠", h: "♥", d: "♦", c: "♣",
+  };
+
+  useEffect(() => {
+    api.busActive().then((r) => { if (r.active) { setSt(r.active); setDone(false); } }).catch(() => {});
+  }, []);
+
+  async function start() {
+    setErr(""); setBusy(true); setMsg(null);
+    try {
+      const r = await api.busStart(stake);
+      setSt(r); setDone(false);
+      if (r.balance) onBalance(r.balance); onPlayed();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function guess(choice: string) {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.busGuess(st.round_id, choice);
+      setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      if (r.outcome === "bust") { setDone(true); setMsg(`${r.card} — off the bus`); }
+      else if (r.outcome === "rode_the_bus") { setDone(true); setMsg(`🚌 RODE THE BUS — paid ${money(r.payout!)}`); }
+      else setMsg(`${r.card} ✓ — riding ${r.multiplier}x`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cashout() {
+    if (!st) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await api.busCashout(st.round_id);
+      setDone(true); onBalance(r.balance); onPlayed();
+      setMsg(`Hopped off at ${r.multiplier}x — ${money(r.payout)}`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="🚌 Ride the Bus" msg={msg} err={err}
+      right={!done && st ? `${st.multiplier}x riding` : undefined}
+      note="Four calls in a row: color, higher/lower, inside/outside, then the suit. Each right call multiplies — hop off between stops or ride it all the way."
+      controls={done ? <>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={start} disabled={busy} className={GOLD_BTN}>Board</button>
+      </> : <>
+        <button onClick={cashout} disabled={busy || st!.stage_num === 0}
+          className="ml-auto rounded-lg border border-gold/50 bg-base-900 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-gold hover:bg-base-700 disabled:opacity-50">
+          Hop off {st!.multiplier}x
+        </button>
+      </>}>
+      <div className="rounded-xl border border-yellow-500/25 bg-gradient-to-b from-[#2e2404] via-[#171202] to-black p-3">
+        <div className="flex items-center justify-center gap-2">
+          {(st?.cards ?? []).map((c, i) => <PlayingCard key={i} c={c} />)}
+          {!done && st && st.cards.length < 4 && <PlayingCard c="??" />}
+          {(!st || (done && !st.cards.length)) && <PlayingCard c="??" />}
+        </div>
+        {!done && st && st.stage && st.options && (
+          <>
+            <p className="mt-3 text-center text-xs font-bold text-slate-300">{STAGE_LABEL[st.stage]}</p>
+            <div className={`mt-2 grid gap-1.5 ${Object.keys(st.options).length > 2 ? "grid-cols-4" : "grid-cols-2"}`}>
+              {Object.entries(st.options).map(([k, m]) => (
+                <button key={k} onClick={() => guess(k)} disabled={busy}
+                  className="rounded-lg border border-gold/40 bg-gold/10 py-2 text-sm font-bold text-gold hover:bg-gold/20 disabled:opacity-50">
+                  {OPT_LABEL[k] ?? k} <span className="font-mono text-[10px]">{Number(m).toFixed(2)}x</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </QuickShell>
+  );
+}
+
+// -------------------------------------------------------------- suit link ----
+function SuitLink({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [suit, setSuit] = useState("h");
+  const [cards, setCards] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const S: Record<string, string> = { s: "♠", h: "♥", d: "♦", c: "♣" };
+
+  async function play() {
+    setErr(""); setBusy(true); setMsg(null); setCards(null);
+    try {
+      const r = await api.suitlinkPlay(stake, suit);
+      setCards(r.cards); onBalance(r.balance); onPlayed();
+      setMsg(r.hits === 2 ? `🔗 BOTH ${S[suit]} — paid ${money(r.payout)}`
+        : r.hits === 1 ? `One ${S[suit]} — paid ${money(r.payout)}`
+        : "No match");
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="🔗 Suit Link" msg={msg} err={err}
+      note="Pick your suit, two cards fall. Both match pays 7.68x, one match pays 1.28x."
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <span className="flex gap-1">
+          {Object.entries(S).map(([k, g]) => (
+            <button key={k} onClick={() => setSuit(k)} disabled={busy}
+              className={`${PICK_BTN(suit === k)} px-3 text-lg ${k === "h" || k === "d" ? "text-red-400" : ""}`}>
+              {g}
+            </button>
+          ))}
+        </span>
+        <button onClick={play} disabled={busy} className={GOLD_BTN}>Drop</button>
+      </>}>
+      <div className="flex items-center justify-center gap-3 rounded-xl border border-pink-500/25 bg-gradient-to-b from-[#2e0a1e] via-[#17040e] to-black py-4">
+        {cards ? cards.map((c, i) => <span key={i} className="reel-pop"><PlayingCard c={c} /></span>)
+          : <><PlayingCard c="??" /><PlayingCard c="??" /></>}
+        <span className="text-3xl text-gold">{S[suit]}</span>
+      </div>
+    </QuickShell>
+  );
+}
+
+// --------------------------------------------------------- high card flush ----
+function HighCardFlush({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed: () => void }) {
+  const [stake, setStake] = useState("10");
+  const [hand, setHand] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  async function deal() {
+    setErr(""); setBusy(true); setMsg(null); setHand(null);
+    try {
+      const r = await api.hcfDeal(stake);
+      for (let i = 1; i <= 5; i++) {
+        setHand(r.hand.slice(0, i));
+        await new Promise((res) => setTimeout(res, 180));
+      }
+      onBalance(r.balance); onPlayed();
+      setMsg(Number(r.payout) > 0
+        ? `${r.flush_len}-card flush — ${r.multiplier}x paid ${money(r.payout)}`
+        : `${r.flush_len}-card flush — no pay`);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  return (
+    <QuickShell title="🂡 High Card Flush" msg={msg} err={err}
+      note="Five cards off a fresh deck — your longest suit is the hand. 3-flush pays 1.32x, 4-flush 6.71x, 5-flush 121.16x."
+      controls={<>
+        <BetInput stake={stake} setStake={setStake} busy={busy} />
+        <button onClick={deal} disabled={busy} className={GOLD_BTN}>Deal</button>
+      </>}>
+      <div className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-gradient-to-b from-[#04291c] via-[#02150e] to-black py-4">
+        {hand ? hand.map((c, i) => <span key={i} className="reel-pop"><PlayingCard c={c} /></span>)
+          : Array.from({ length: 5 }, (_, i) => <PlayingCard key={i} c="??" />)}
+      </div>
+    </QuickShell>
   );
 }
 

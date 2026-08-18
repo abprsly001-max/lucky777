@@ -482,7 +482,39 @@ function HiLoArt() {
   );
 }
 
+/* compact tiles for the arcade wall: theme gradient, hero emoji, gold title */
+const EMOJI_TILES: Record<string, { from: string; to: string; hero: string;
+  side?: string; label: string }> = {
+  lucky7: { from: "#3a2606", to: "#140d02", hero: "🎲", side: "7️⃣", label: "LUCKY 7" },
+  rps: { from: "#241048", to: "#0d0620", hero: "✊", side: "✌️", label: "ROCK PAPER SCISSORS" },
+  darts: { from: "#3a0808", to: "#170404", hero: "🎯", label: "CALL YOUR RING" },
+  prism: { from: "#33063a", to: "#150217", hero: "💎", side: "🔮", label: "PRISM" },
+  penalty: { from: "#0a3a14", to: "#041708", hero: "⚽", side: "🧤", label: "PENALTY SHOOTOUT" },
+  penguin: { from: "#053347", to: "#02141d", hero: "🐧", side: "🐻‍❄️", label: "PENGUIN DASH" },
+  acey: { from: "#141048", to: "#0a071d", hero: "🎴", label: "BETWEEN OR OUTSIDE" },
+  war: { from: "#3a0a14", to: "#170408", hero: "⚔️", label: "HIGH CARD WINS" },
+  flip: { from: "#20263a", to: "#0d0f18", hero: "🃏", side: "❤️", label: "FLIP THE REDS" },
+  bus: { from: "#3a2e06", to: "#171202", hero: "🚌", label: "RIDE THE BUS" },
+  suitlink: { from: "#3a0a26", to: "#17040e", hero: "🔗", side: "♥", label: "SUIT LINK" },
+  hcf: { from: "#04331f", to: "#021710", hero: "🂡", side: "♠", label: "HIGH CARD FLUSH" },
+};
+
+function EmojiTile({ id, t }: { id: string;
+  t: { from: string; to: string; hero: string; side?: string; label: string } }) {
+  return (
+    <Frame id={`et-${id}`} from={t.from} to={t.to}>
+      <text x="160" y="82" fontSize="54" textAnchor="middle">{t.hero}</text>
+      {t.side && <text x="252" y="52" fontSize="28" textAnchor="middle">{t.side}</text>}
+      {t.side && <text x="66" y="46" fontSize="22" textAnchor="middle" opacity="0.7">{t.side}</text>}
+      <text x="160" y="118" fontSize="11" fontWeight="900" textAnchor="middle"
+        fill={`url(#et-${id}-gold)`} fontFamily="Arial Black, sans-serif">{t.label}</text>
+    </Frame>
+  );
+}
+
 export default function GameArt({ k }: { k: string }) {
+  const et = EMOJI_TILES[k];
+  if (et) return <EmojiTile id={k} t={et} />;
   if (k === "keno") return <KenoArt />;
   if (k === "limbo") return <LimboArt />;
   if (k === "towers") return <TowersArt />;

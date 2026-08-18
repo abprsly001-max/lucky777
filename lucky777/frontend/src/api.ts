@@ -195,6 +195,33 @@ export interface HiLoState {
   correct?: boolean; balance?: string;
 }
 
+export interface LadderDef {
+  game: string;
+  levels: Record<string, { p: string; max_steps: number; mults: string[] }>;
+}
+
+export interface LadderState {
+  round_id: number; status: string; outcome: string | null;
+  game: string; level: string; step: number; max_steps: number;
+  stake: string; multiplier: string; next_multiplier: string | null;
+  payout: string | null; balance?: string;
+}
+
+export interface FlipState {
+  round_id: number; flipped: string[]; reds_left: number; blacks_left: number;
+  multiplier: string; next_multiplier: string | null; stake: string;
+  balance?: string;
+}
+
+export interface BusState {
+  round_id: number; cards: string[]; stage: string | null; stage_num: number;
+  multiplier: string; options: Record<string, string> | null; stake: string;
+  balance?: string;
+}
+
+export interface DartsDef { rings: { ring: string; mult: string }[] }
+export interface PrismDef { segments: { gem: string; mult: string }[] }
+
 export interface PlinkoDef {
   rows: number[];
   tables: Record<string, Record<string, string[]>>;
@@ -261,7 +288,8 @@ export const api = {
                        slot?: SlotDef; plinko?: PlinkoDef; vslot?: VSlotDef;
                        holdspin?: HoldSpinDef; dragon?: DragonDef;
                        tumble?: TumbleDef; keno?: KenoDef; limbo?: LimboDef;
-                       towers?: TowersDef }[] }>(
+                       towers?: TowersDef; darts?: DartsDef; prism?: PrismDef;
+                       ladder?: LadderDef }[] }>(
       "/api/casino/lobby"),
   plinkoDrop: (stake: string, rows: number, risk: string) =>
     request<{ round_id: number; rows: number; risk: string; path: number[];
@@ -329,6 +357,95 @@ export const api = {
       "/api/casino/holdspin/respin", { method: "POST" }),
   holdspinActive: () =>
     request<{ active: HoldSpinState | null }>("/api/casino/holdspin/active"),
+  lucky7Roll: (stake: string, bet: string) =>
+    request<{ round_id: number; dice: number[]; total: number; bet: string;
+              payout: string; balance: string }>(
+      "/api/casino/lucky7/roll", { method: "POST", body: JSON.stringify({ stake, bet }) }),
+  rpsThrow: (stake: string, bet: string) =>
+    request<{ round_id: number; player: string; house: string; result: string;
+              payout: string; balance: string }>(
+      "/api/casino/rps/throw", { method: "POST", body: JSON.stringify({ stake, bet }) }),
+  dartsThrow: (stake: string, bet: string) =>
+    request<{ round_id: number; bet: string; landed: string; payout: string;
+              balance: string }>(
+      "/api/casino/darts/throw", { method: "POST", body: JSON.stringify({ stake, bet }) }),
+  prismSpin: (stake: string) =>
+    request<{ round_id: number; gem: string; multiplier: string; payout: string;
+              balance: string }>(
+      "/api/casino/prism/spin", { method: "POST", body: JSON.stringify({ stake }) }),
+  ladderStart: (game: string, stake: string, level: string) =>
+    request<LadderState>(`/api/casino/ladder/${game}/start`,
+      { method: "POST", body: JSON.stringify({ stake, level }) }),
+  ladderStep: (game: string, roundId: number) =>
+    request<LadderState & { survived: boolean }>(
+      `/api/casino/ladder/${game}/${roundId}/step`, { method: "POST" }),
+  ladderCashout: (game: string, roundId: number) =>
+    request<LadderState>(`/api/casino/ladder/${game}/${roundId}/cashout`,
+      { method: "POST" }),
+  ladderActive: (game: string) =>
+    request<{ active: LadderState | null }>(`/api/casino/ladder/${game}/active`),
+  aceyStart: (stake: string) =>
+    request<{ round_id: number; cards: string[]; between_mult: string;
+              outside_mult: string; stake: string; balance: string }>(
+      "/api/casino/acey/start", { method: "POST", body: JSON.stringify({ stake }) }),
+  aceyChoose: (roundId: number, side: string) =>
+    request<{ round_id: number; cards: string[]; third: string; side: string;
+              hit: boolean; multiplier: string; payout: string; balance: string }>(
+      `/api/casino/acey/${roundId}/choose`,
+      { method: "POST", body: JSON.stringify({ side }) }),
+  aceyActive: () =>
+    request<{ active: { round_id: number; cards: string[]; between_mult: string;
+                        outside_mult: string; stake: string } | null }>(
+      "/api/casino/acey/active"),
+  warDeal: (stake: string) =>
+    request<{ round_id: number; player: string; dealer: string; tie: boolean;
+              status: string; payout: string; balance: string }>(
+      "/api/casino/war/deal", { method: "POST", body: JSON.stringify({ stake }) }),
+  warGo: (roundId: number) =>
+    request<{ round_id: number; war_player: string; war_dealer: string;
+              outcome: string; payout: string; balance: string }>(
+      `/api/casino/war/${roundId}/war`, { method: "POST" }),
+  warSurrender: (roundId: number) =>
+    request<{ round_id: number; outcome: string; payout: string; balance: string }>(
+      `/api/casino/war/${roundId}/surrender`, { method: "POST" }),
+  warActive: () =>
+    request<{ active: { round_id: number; player: string; dealer: string;
+                        stake: string } | null }>("/api/casino/war/active"),
+  flipStart: (stake: string) =>
+    request<FlipState>("/api/casino/flip/start",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  flipFlip: (roundId: number) =>
+    request<FlipState & { card: string; status: string; outcome: string | null;
+              payout: string | null }>(
+      `/api/casino/flip/${roundId}/flip`, { method: "POST" }),
+  flipCashout: (roundId: number) =>
+    request<{ round_id: number; multiplier: string; payout: string;
+              balance: string }>(
+      `/api/casino/flip/${roundId}/cashout`, { method: "POST" }),
+  flipActive: () =>
+    request<{ active: FlipState | null }>("/api/casino/flip/active"),
+  busStart: (stake: string) =>
+    request<BusState>("/api/casino/bus/start",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  busGuess: (roundId: number, choice: string) =>
+    request<BusState & { card: string; correct: boolean; status: string;
+              outcome: string | null; payout: string | null }>(
+      `/api/casino/bus/${roundId}/guess`,
+      { method: "POST", body: JSON.stringify({ choice }) }),
+  busCashout: (roundId: number) =>
+    request<{ round_id: number; multiplier: string; payout: string;
+              balance: string }>(
+      `/api/casino/bus/${roundId}/cashout`, { method: "POST" }),
+  busActive: () =>
+    request<{ active: BusState | null }>("/api/casino/bus/active"),
+  suitlinkPlay: (stake: string, bet: string) =>
+    request<{ round_id: number; suit: string; cards: string[]; hits: number;
+              payout: string; balance: string }>(
+      "/api/casino/suitlink/play", { method: "POST", body: JSON.stringify({ stake, bet }) }),
+  hcfDeal: (stake: string) =>
+    request<{ round_id: number; hand: string[]; flush_len: number;
+              multiplier: string; payout: string; balance: string }>(
+      "/api/casino/hcf/deal", { method: "POST", body: JSON.stringify({ stake }) }),
   kenoPlay: (stake: string, picks: number[]) =>
     request<{ round_id: number; drawn: number[]; picks: number[]; hits: number;
               multiplier: string; win: string; balance: string }>(

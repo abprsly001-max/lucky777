@@ -271,7 +271,90 @@ def _arcade_entries(mn: str, mx: str) -> list[dict]:
          "rules": "Call the next card higher or lower — every right call "
                   "multiplies at true odds. A tie loses, so press or cash out "
                   "whenever you like."},
+        {"key": "lucky7", "name": "Lucky 7", "icon": "🎲", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": "Two dice. Under 7 or over 7 pays 1.3:1; exactly 7 pays "
+                  "4.75:1."},
+        {"key": "rps", "name": "Rock Paper Scissors", "icon": "✊",
+         "category": "quick", "min": mn, "max": mx,
+         "rules": "Beat the house hand and get paid 0.92:1; a tie pushes."},
+        {"key": "darts", "name": "Darts", "icon": "🎯", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": "Call your ring before the throw. " + " · ".join(
+             f"{r} pays {AR2_darts(r)}x" for r in
+             ("bullseye", "inner", "middle", "outer")),
+         "darts": {"rings": [{"ring": r, "mult": str(AR2_darts(r))}
+                             for r, _ in _q().DARTS_RINGS]}},
+        {"key": "prism", "name": "Prism", "icon": "💎", "category": "quick",
+         "min": mn, "max": mx,
+         "rules": "Spin the prism — land a gem and it pays its printed "
+                  "multiple. Diamond tops the board.",
+         "prism": {"segments": [{"gem": g, "mult": str(m)}
+                                for g, _, m in _q().PRISM_SEGMENTS]}},
+        {"key": "penalty", "name": "Penalty Shootout", "icon": "⚽",
+         "category": "quick", "min": mn, "max": mx,
+         "rules": "Bury penalties past the keeper — every goal multiplies, "
+                  "one save ends the run. Cash out between kicks.",
+         "ladder": _ladder_def("penalty")},
+        {"key": "penguin", "name": "Penguin Dash", "icon": "🐧",
+         "category": "quick", "min": mn, "max": mx,
+         "rules": "Hop the ice floes ahead of the bear — every landing "
+                  "multiplies, one slip ends the dash. Three difficulties.",
+         "ladder": _ladder_def("penguin")},
+        {"key": "acey", "name": "Acey Ducey", "icon": "🎴", "category": "table",
+         "min": mn, "max": mx,
+         "rules": "Two cards up — call the third strictly between or strictly "
+                  "outside at true odds. Landing on a boundary card loses."},
+        {"key": "war", "name": "War", "icon": "⚔", "category": "table",
+         "min": mn, "max": mx,
+         "rules": "High card wins even money. On a tie, surrender for half "
+                  "back or go to WAR for a second stake — win the war and "
+                  "collect on both."},
+        {"key": "flip", "name": "10 Card Flip", "icon": "🃏",
+         "category": "table", "min": mn, "max": mx,
+         "rules": "Ten cards, five red, five black. Flip reds to build the "
+                  "multiplier at true deck odds — one black ends the run. "
+                  "Cash out any time."},
+        {"key": "bus", "name": "Ride the Bus", "icon": "🚌",
+         "category": "table", "min": mn, "max": mx,
+         "rules": "Four calls: red or black, higher or lower, inside or "
+                  "outside, then the suit. Each one multiplies — cash out "
+                  "between stops or ride it all the way."},
+        {"key": "suitlink", "name": "Suit Link", "icon": "🔗",
+         "category": "quick", "min": mn, "max": mx,
+         "rules": f"Pick your suit, two cards fall. Both match pays "
+                  f"{_cd().SUIT_BOTH}x, one match pays {_cd().SUIT_ONE}x."},
+        {"key": "hcf", "name": "High Card Flush", "icon": "🂡",
+         "category": "table", "min": mn, "max": mx,
+         "rules": "Five cards off a fresh deck — the longest suit is your "
+                  "hand. " + " · ".join(
+                      f"{k}-flush pays {m}x"
+                      for k, m in sorted(_cd().hcf_paytable().items()))},
     ]
+
+
+def _cd():
+    from . import cards as CD
+    return CD
+
+
+def _q():
+    from . import quick as Q
+    return Q
+
+
+def AR2_darts(ring: str) -> Decimal:
+    return _q().darts_mult(ring)
+
+
+def _ladder_def(game: str) -> dict:
+    Q = _q()
+    cfg = Q.LADDERS[game]
+    return {"game": game, "levels": {
+        lvl: {"p": str(cfg["step_p"][lvl]), "max_steps": cfg["max_steps"][lvl],
+              "mults": [str(Q.ladder_mult(game, lvl, s))
+                        for s in range(1, cfg["max_steps"][lvl] + 1)]}
+        for lvl in cfg["levels"]}}
 
 
 # ------------------------------------------------------------------- dice ----
@@ -1769,6 +1852,782 @@ async def hilo_active(user: User = Depends(current_user),
     if rnd is None:
         return {"active": None}
     return {"active": _hilo_public(rnd, json.loads(rnd.detail))}
+
+
+# ------------------------------------------------------------ quick batch ----
+class QuickBet(BaseModel):
+    stake: str
+    bet: str | None = None
+    idempotency_key: str | None = None
+
+
+async def _instant_round(session, user, stake_m: int, game: str, ref: str,
+                         ret_mult: Decimal, detail: dict, key: str):
+    """Shared settle path for one-shot games: charge, pay, record."""
+    win = payout_micros(stake_m, ret_mult)
+    rnd = CasinoRound(game=game, user_id=user.id,
+                      seed_pair_id=detail.pop("_pair_id"),
+                      nonce=detail.pop("_nonce"),
+                      stake_micros=stake_m, status="settled",
+                      outcome="win" if win > stake_m else
+                              ("push" if win > 0 else "lose"),
+                      payout_micros=win, detail=json.dumps(detail))
+    session.add(rnd)
+    await session.flush()
+    wallet, house = await _charge(session, user, stake_m, ref, rnd.id,
+                                  f"{game}:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, ref, rnd.id,
+               f"{game}:{rnd.id}:settle:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    return rnd, win, balance
+
+
+@router.post("/lucky7/roll")
+async def lucky7_roll(req: QuickBet, user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    _casino_gate(user)
+    if req.bet not in ("under", "seven", "over"):
+        raise HTTPException(400, "bet is under, seven or over")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    d1, d2 = Q.lucky7_roll(pair.server_seed, pair.client_seed, nonce)
+    ret = Q.lucky7_settle(req.bet, d1 + d2)
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "lucky7", "lucky7_roll", ret,
+        {"bet": req.bet, "dice": [d1, d2], "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "dice": [d1, d2], "total": d1 + d2,
+            "bet": req.bet, "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/rps/throw")
+async def rps_throw(req: QuickBet, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    _casino_gate(user)
+    if req.bet not in Q.RPS_MOVES:
+        raise HTTPException(400, "bet is rock, paper or scissors")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    house_move = Q.rps_house(pair.server_seed, pair.client_seed, nonce)
+    ret = Q.rps_settle(req.bet, house_move)
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "rps", "rps_throw", ret,
+        {"player": req.bet, "house": house_move,
+         "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "player": req.bet, "house": house_move,
+            "result": "push" if ret == 1 else ("win" if ret > 1 else "lose"),
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/darts/throw")
+async def darts_throw(req: QuickBet, user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    _casino_gate(user)
+    rings = [r for r, _ in Q.DARTS_RINGS]
+    if req.bet not in rings:
+        raise HTTPException(400, f"bet is one of {', '.join(rings)}")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    landed = Q.darts_throw(pair.server_seed, pair.client_seed, nonce)
+    ret = Q.darts_mult(req.bet) if landed == req.bet else Decimal(0)
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "darts", "darts_throw", ret,
+        {"bet": req.bet, "landed": landed,
+         "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "bet": req.bet, "landed": landed,
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/prism/spin")
+async def prism_spin(req: QuickBet, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    _casino_gate(user)
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    gem, mult = Q.prism_spin(pair.server_seed, pair.client_seed, nonce)
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "prism", "prism_spin", mult,
+        {"gem": gem, "multiplier": str(mult),
+         "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "gem": gem, "multiplier": str(mult),
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+# ---------------------------------------------------------- streak ladders ----
+class LadderStart(BaseModel):
+    stake: str
+    level: str = "normal"
+    idempotency_key: str | None = None
+
+
+def _ladder_public(rnd, st, done: bool = False) -> dict:
+    from . import quick as Q
+    g, lvl, step = st["game"], st["level"], st["step"]
+    mx = Q.LADDERS[g]["max_steps"][lvl]
+    return {"round_id": rnd.id, "status": rnd.status, "outcome": rnd.outcome,
+            "game": g, "level": lvl, "step": step, "max_steps": mx,
+            "stake": str(from_micros(rnd.stake_micros)),
+            "multiplier": str(Q.ladder_mult(g, lvl, step)),
+            "next_multiplier": (str(Q.ladder_mult(g, lvl, step + 1))
+                                if step < mx else None),
+            "payout": (str(from_micros(rnd.payout_micros))
+                       if rnd.payout_micros is not None else None)}
+
+
+@router.post("/ladder/{game}/start")
+async def ladder_start(game: str, req: LadderStart,
+                       user: User = Depends(betting_user),
+                       session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    _casino_gate(user)
+    if game not in Q.LADDERS:
+        raise HTTPException(404, "no such game")
+    if req.level not in Q.LADDERS[game]["levels"]:
+        raise HTTPException(400, f"level is {', '.join(Q.LADDERS[game]['levels'])}")
+    if await _open_round(session, user.id, f"ladder:{game}"):
+        raise HTTPException(409, "finish your open run first")
+    stake_m = _stake_or_400(req.stake, user)
+
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    st = {"game": game, "level": req.level, "step": 0}
+    rnd = CasinoRound(game=f"ladder:{game}", user_id=user.id,
+                      seed_pair_id=pair.id, nonce=nonce, stake_micros=stake_m,
+                      status="open", detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, f"{game}_run", rnd.id,
+                              f"ld:{rnd.id}:place:{key}")
+    out = _ladder_public(rnd, st)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.post("/ladder/{game}/{round_id}/step")
+async def ladder_step(game: str, round_id: int,
+                      user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != f"ladder:{game}":
+        raise HTTPException(404, "no such run")
+    if rnd.status != "open":
+        raise HTTPException(409, "that run is finished")
+    st = json.loads(rnd.detail)
+    lvl, step = st["level"], st["step"]
+    mx = Q.LADDERS[game]["max_steps"][lvl]
+    if step >= mx:
+        raise HTTPException(409, "top of the ladder — cash out")
+
+    pair = await seeds.active_pair(session, user.id)
+    ok = Q.ladder_step(pair.server_seed, pair.client_seed, rnd.nonce,
+                       game, lvl, step)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    if ok:
+        st["step"] += 1
+        rnd.detail = json.dumps(st)
+        if st["step"] >= mx:                      # top: auto-collect
+            mult = Q.ladder_mult(game, lvl, mx)
+            rnd.payout_micros = payout_micros(rnd.stake_micros, mult)
+            rnd.status = "settled"; rnd.outcome = "topped"
+            rnd.settled_at = datetime.now(timezone.utc)
+            await _pay(session, house, wallet, rnd.payout_micros,
+                       f"{game}_run", rnd.id, f"ld:{rnd.id}:settle")
+    else:
+        rnd.status = "settled"; rnd.outcome = "bust"; rnd.payout_micros = 0
+        rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+    out = _ladder_public(rnd, st, rnd.status == "settled")
+    out["survived"] = ok
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.post("/ladder/{game}/{round_id}/cashout")
+async def ladder_cashout(game: str, round_id: int,
+                         user: User = Depends(betting_user),
+                         session: AsyncSession = Depends(get_session)):
+    from . import quick as Q
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != f"ladder:{game}":
+        raise HTTPException(404, "no such run")
+    if rnd.status != "open":
+        raise HTTPException(409, "that run is finished")
+    st = json.loads(rnd.detail)
+    if st["step"] == 0:
+        raise HTTPException(409, "take at least one step before cashing out")
+    mult = Q.ladder_mult(game, st["level"], st["step"])
+    rnd.payout_micros = payout_micros(rnd.stake_micros, mult)
+    rnd.status = "settled"; rnd.outcome = "cashout"
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, rnd.payout_micros, f"{game}_run",
+               rnd.id, f"ld:{rnd.id}:settle")
+    out = _ladder_public(rnd, st, True)
+    out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
+    await session.commit()
+    return out
+
+
+@router.get("/ladder/{game}/active")
+async def ladder_active(game: str, user: User = Depends(current_user),
+                        session: AsyncSession = Depends(get_session)):
+    rnd = await _open_round(session, user.id, f"ladder:{game}")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _ladder_public(rnd, json.loads(rnd.detail))}
+
+
+# ------------------------------------------------------------- acey ducey ----
+@router.post("/acey/start")
+async def acey_start(req: HoldSpinReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    if await _open_round(session, user.id, "acey"):
+        raise HTTPException(409, "finish your open hand first")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    a = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 0)
+    b = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 1)
+    pb, po = CD.acey_probs(CD.rank(a), CD.rank(b))
+    st = {"cards": [a, b]}
+    rnd = CasinoRound(game="acey", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, "acey_hand", rnd.id,
+                              f"ac:{rnd.id}:place:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "cards": [a, b],
+            "between_mult": str(CD.acey_mult(pb)),
+            "outside_mult": str(CD.acey_mult(po)),
+            "stake": str(from_micros(stake_m)),
+            "balance": str(from_micros(balance))}
+
+
+class AceyChoose(BaseModel):
+    side: str                                  # between | outside
+
+
+@router.post("/acey/{round_id}/choose")
+async def acey_choose(round_id: int, req: AceyChoose,
+                      user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "acey":
+        raise HTTPException(404, "no such hand")
+    if rnd.status != "open":
+        raise HTTPException(409, "that hand is finished")
+    if req.side not in ("between", "outside"):
+        raise HTTPException(400, "side is between or outside")
+    st = json.loads(rnd.detail)
+    a, b = st["cards"]
+    pb, po = CD.acey_probs(CD.rank(a), CD.rank(b))
+    p = pb if req.side == "between" else po
+    mult = CD.acey_mult(p)
+    if mult <= 0:
+        raise HTTPException(400, "that side isn't offered on these cards")
+
+    pair = await seeds.active_pair(session, user.id)
+    third = CD.draw_card(pair.server_seed, pair.client_seed, rnd.nonce, 2)
+    lo, hi = sorted((CD.rank(a), CD.rank(b)))
+    nr = CD.rank(third)
+    hit = (lo < nr < hi) if req.side == "between" else (nr < lo or nr > hi)
+    win = payout_micros(rnd.stake_micros, mult) if hit else 0
+    st["third"] = third; st["side"] = req.side
+    rnd.status = "settled"; rnd.outcome = "win" if hit else "lose"
+    rnd.payout_micros = win
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, win, "acey_hand", rnd.id,
+               f"ac:{rnd.id}:settle")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "cards": [a, b], "third": third,
+            "side": req.side, "hit": hit, "multiplier": str(mult),
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/acey/active")
+async def acey_active(user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await _open_round(session, user.id, "acey")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    a, b = st["cards"]
+    pb, po = CD.acey_probs(CD.rank(a), CD.rank(b))
+    return {"active": {"round_id": rnd.id, "cards": st["cards"],
+                       "between_mult": str(CD.acey_mult(pb)),
+                       "outside_mult": str(CD.acey_mult(po)),
+                       "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# ------------------------------------------------------------- casino war ----
+@router.post("/war/deal")
+async def war_deal(req: HoldSpinReq, user: User = Depends(betting_user),
+                   session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    if await _open_round(session, user.id, "war"):
+        raise HTTPException(409, "finish your open battle first")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    p = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 0)
+    d = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 1)
+    pr, dr = CD.rank(p), CD.rank(d)
+    tie = pr == dr
+    st = {"player": p, "dealer": d, "stage": "war_offer" if tie else "done"}
+
+    if tie:
+        rnd = CasinoRound(game="war", user_id=user.id, seed_pair_id=pair.id,
+                          nonce=nonce, stake_micros=stake_m, status="open",
+                          detail=json.dumps(st))
+    else:
+        win = payout_micros(stake_m, Decimal(2)) if pr > dr else 0
+        rnd = CasinoRound(game="war", user_id=user.id, seed_pair_id=pair.id,
+                          nonce=nonce, stake_micros=stake_m, status="settled",
+                          outcome="win" if win else "lose", payout_micros=win,
+                          detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "war_hand", rnd.id,
+                                  f"wr:{rnd.id}:place:{key}")
+    if rnd.status == "settled":
+        await _pay(session, house, wallet, rnd.payout_micros, "war_hand",
+                   rnd.id, f"wr:{rnd.id}:settle:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "player": p, "dealer": d, "tie": tie,
+            "status": rnd.status,
+            "payout": str(from_micros(rnd.payout_micros or 0)),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/war/{round_id}/war")
+async def war_go(round_id: int, user: User = Depends(betting_user),
+                 session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "war":
+        raise HTTPException(404, "no such battle")
+    if rnd.status != "open":
+        raise HTTPException(409, "that battle is finished")
+    st = json.loads(rnd.detail)
+
+    pair = await seeds.active_pair(session, user.id)
+    wallet, house = await _charge(session, user, rnd.stake_micros, "war_hand",
+                                  rnd.id, f"wr:{rnd.id}:raise")
+    p2 = CD.draw_card(pair.server_seed, pair.client_seed, rnd.nonce, 2)
+    d2 = CD.draw_card(pair.server_seed, pair.client_seed, rnd.nonce, 3)
+    pr, dr = CD.rank(p2), CD.rank(d2)
+    # 3x back of the 2 staked on a win, 4x on a second tie, 0 on a loss
+    ret = Decimal(4) if pr == dr else (Decimal(3) if pr > dr else Decimal(0))
+    win = payout_micros(rnd.stake_micros, ret)
+    st.update({"war_player": p2, "war_dealer": d2, "stage": "done"})
+    rnd.status = "settled"
+    rnd.outcome = "war_win" if ret >= 3 else "war_lose"
+    rnd.payout_micros = win
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    await _pay(session, house, wallet, win, "war_hand", rnd.id,
+               f"wr:{rnd.id}:war_settle")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "war_player": p2, "war_dealer": d2,
+            "outcome": rnd.outcome, "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/war/{round_id}/surrender")
+async def war_surrender(round_id: int, user: User = Depends(betting_user),
+                        session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "war":
+        raise HTTPException(404, "no such battle")
+    if rnd.status != "open":
+        raise HTTPException(409, "that battle is finished")
+    st = json.loads(rnd.detail)
+    win = payout_micros(rnd.stake_micros, CD.WAR_SURRENDER)
+    st["stage"] = "done"
+    rnd.status = "settled"; rnd.outcome = "surrender"; rnd.payout_micros = win
+    rnd.settled_at = datetime.now(timezone.utc)
+    rnd.detail = json.dumps(st)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, win, "war_hand", rnd.id,
+               f"wr:{rnd.id}:surrender")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "outcome": "surrender",
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/war/active")
+async def war_active(user: User = Depends(current_user),
+                     session: AsyncSession = Depends(get_session)):
+    rnd = await _open_round(session, user.id, "war")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    return {"active": {"round_id": rnd.id, "player": st["player"],
+                       "dealer": st["dealer"],
+                       "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# ------------------------------------------------------------ 10 card flip ----
+@router.post("/flip/start")
+async def flip_start(req: HoldSpinReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    if await _open_round(session, user.id, "flip"):
+        raise HTTPException(409, "finish your open run first")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    deck = CD.flip_deck(pair.server_seed, pair.client_seed, nonce)
+    st = {"deck": deck, "flipped": 0, "mult": "1"}
+    rnd = CasinoRound(game="flip", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, "flip_run", rnd.id,
+                              f"fl:{rnd.id}:place:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "flipped": [], "reds_left": CD.FLIP_REDS,
+            "blacks_left": CD.FLIP_BLACKS, "multiplier": "1",
+            "next_multiplier": str(CD.flip_step_mult(5, 5)),
+            "stake": str(from_micros(stake_m)),
+            "balance": str(from_micros(balance))}
+
+
+def _flip_state(st) -> tuple[list[str], int, int]:
+    seen = st["deck"][:st["flipped"]]
+    reds = CD_FLIP_REDS - seen.count("r")
+    blacks = CD_FLIP_BLACKS - seen.count("b")
+    return seen, reds, blacks
+
+
+CD_FLIP_REDS, CD_FLIP_BLACKS = 5, 5
+
+
+@router.post("/flip/{round_id}/flip")
+async def flip_flip(round_id: int, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "flip":
+        raise HTTPException(404, "no such run")
+    if rnd.status != "open":
+        raise HTTPException(409, "that run is finished")
+    st = json.loads(rnd.detail)
+    _, reds, blacks = _flip_state(st)
+    if reds <= 0:
+        raise HTTPException(409, "no red cards left — cash out")
+    step_mult = CD.flip_step_mult(reds, blacks)
+    card = st["deck"][st["flipped"]]
+    st["flipped"] += 1
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    if card == "r":
+        st["mult"] = str((Decimal(st["mult"]) * step_mult)
+                         .quantize(Decimal("0.0001"), rounding="ROUND_DOWN"))
+        rnd.detail = json.dumps(st)
+        _, reds2, _b2 = _flip_state(st)
+        if reds2 == 0:                          # all reds found: auto-collect
+            rnd.payout_micros = payout_micros(rnd.stake_micros,
+                                              Decimal(st["mult"]))
+            rnd.status = "settled"; rnd.outcome = "cleared"
+            rnd.settled_at = datetime.now(timezone.utc)
+            await _pay(session, house, wallet, rnd.payout_micros, "flip_run",
+                       rnd.id, f"fl:{rnd.id}:settle")
+    else:
+        rnd.status = "settled"; rnd.outcome = "bust"; rnd.payout_micros = 0
+        rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+    seen, reds, blacks = _flip_state(st)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "card": card, "flipped": seen,
+            "reds_left": reds, "blacks_left": blacks,
+            "status": rnd.status, "outcome": rnd.outcome,
+            "multiplier": st["mult"],
+            "next_multiplier": (str(CD.flip_step_mult(reds, blacks))
+                                if rnd.status == "open" else None),
+            "payout": (str(from_micros(rnd.payout_micros))
+                       if rnd.payout_micros is not None else None),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/flip/{round_id}/cashout")
+async def flip_cashout(round_id: int, user: User = Depends(betting_user),
+                       session: AsyncSession = Depends(get_session)):
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "flip":
+        raise HTTPException(404, "no such run")
+    if rnd.status != "open":
+        raise HTTPException(409, "that run is finished")
+    st = json.loads(rnd.detail)
+    if st["flipped"] == 0:
+        raise HTTPException(409, "flip at least one card before cashing out")
+    rnd.payout_micros = payout_micros(rnd.stake_micros, Decimal(st["mult"]))
+    rnd.status = "settled"; rnd.outcome = "cashout"
+    rnd.settled_at = datetime.now(timezone.utc)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, rnd.payout_micros, "flip_run", rnd.id,
+               f"fl:{rnd.id}:settle")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "status": "settled", "outcome": "cashout",
+            "multiplier": st["mult"],
+            "payout": str(from_micros(rnd.payout_micros)),
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/flip/active")
+async def flip_active(user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await _open_round(session, user.id, "flip")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    seen, reds, blacks = _flip_state(st)
+    return {"active": {"round_id": rnd.id, "flipped": seen,
+                       "reds_left": reds, "blacks_left": blacks,
+                       "multiplier": st["mult"],
+                       "next_multiplier": str(CD.flip_step_mult(reds, blacks)),
+                       "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# ------------------------------------------------------------ ride the bus ----
+@router.post("/bus/start")
+async def bus_start(req: HoldSpinReq, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    if await _open_round(session, user.id, "bus"):
+        raise HTTPException(409, "finish your open ride first")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    st = {"cards": [], "stage": 0, "mult": "1"}
+    rnd = CasinoRound(game="bus", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m, status="open",
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, _ = await _charge(session, user, stake_m, "bus_ride", rnd.id,
+                              f"bs:{rnd.id}:place:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "cards": [], "stage": CD.BUS_STAGES[0],
+            "stage_num": 0, "multiplier": "1",
+            "options": {k: str(v) for k, v in
+                        CD.bus_options(CD.BUS_STAGES[0], []).items()},
+            "stake": str(from_micros(stake_m)),
+            "balance": str(from_micros(balance))}
+
+
+class BusGuess(BaseModel):
+    choice: str
+
+
+@router.post("/bus/{round_id}/guess")
+async def bus_guess(round_id: int, req: BusGuess,
+                    user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "bus":
+        raise HTTPException(404, "no such ride")
+    if rnd.status != "open":
+        raise HTTPException(409, "that ride is finished")
+    st = json.loads(rnd.detail)
+    stage = CD.BUS_STAGES[st["stage"]]
+    opts = CD.bus_options(stage, st["cards"])
+    if req.choice not in opts:
+        raise HTTPException(400, f"choice is one of {', '.join(opts)}")
+
+    pair = await seeds.active_pair(session, user.id)
+    new = CD.draw_card(pair.server_seed, pair.client_seed, rnd.nonce,
+                       st["stage"])
+    correct = CD.bus_correct(stage, req.choice, st["cards"], new)
+    st["cards"].append(new)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    if correct:
+        st["mult"] = str((Decimal(st["mult"]) * opts[req.choice])
+                         .quantize(Decimal("0.0001"), rounding="ROUND_DOWN"))
+        st["stage"] += 1
+        rnd.detail = json.dumps(st)
+        if st["stage"] >= len(CD.BUS_STAGES):    # off the bus: auto-collect
+            rnd.payout_micros = payout_micros(rnd.stake_micros,
+                                              Decimal(st["mult"]))
+            rnd.status = "settled"; rnd.outcome = "rode_the_bus"
+            rnd.settled_at = datetime.now(timezone.utc)
+            await _pay(session, house, wallet, rnd.payout_micros, "bus_ride",
+                       rnd.id, f"bs:{rnd.id}:settle")
+    else:
+        rnd.status = "settled"; rnd.outcome = "bust"; rnd.payout_micros = 0
+        rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+    nxt = (CD.BUS_STAGES[st["stage"]]
+           if rnd.status == "open" else None)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "card": new, "correct": correct,
+            "cards": st["cards"], "status": rnd.status,
+            "outcome": rnd.outcome, "multiplier": st["mult"],
+            "stage": nxt, "stage_num": st["stage"],
+            "options": ({k: str(v) for k, v in
+                         CD.bus_options(nxt, st["cards"]).items()}
+                        if nxt else None),
+            "payout": (str(from_micros(rnd.payout_micros))
+                       if rnd.payout_micros is not None else None),
+            "balance": str(from_micros(balance))}
+
+
+@router.post("/bus/{round_id}/cashout")
+async def bus_cashout(round_id: int, user: User = Depends(betting_user),
+                      session: AsyncSession = Depends(get_session)):
+    rnd = await session.get(CasinoRound, round_id)
+    if rnd is None or rnd.user_id != user.id or rnd.game != "bus":
+        raise HTTPException(404, "no such ride")
+    if rnd.status != "open":
+        raise HTTPException(409, "that ride is finished")
+    st = json.loads(rnd.detail)
+    if st["stage"] == 0:
+        raise HTTPException(409, "clear a stage before cashing out")
+    rnd.payout_micros = payout_micros(rnd.stake_micros, Decimal(st["mult"]))
+    rnd.status = "settled"; rnd.outcome = "cashout"
+    rnd.settled_at = datetime.now(timezone.utc)
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    await _pay(session, house, wallet, rnd.payout_micros, "bus_ride", rnd.id,
+               f"bs:{rnd.id}:settle")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"round_id": rnd.id, "status": "settled", "outcome": "cashout",
+            "multiplier": st["mult"],
+            "payout": str(from_micros(rnd.payout_micros)),
+            "balance": str(from_micros(balance))}
+
+
+@router.get("/bus/active")
+async def bus_active(user: User = Depends(current_user),
+                     session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    rnd = await _open_round(session, user.id, "bus")
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    st = json.loads(rnd.detail)
+    stage = CD.BUS_STAGES[st["stage"]]
+    return {"active": {"round_id": rnd.id, "cards": st["cards"],
+                       "stage": stage, "stage_num": st["stage"],
+                       "multiplier": st["mult"],
+                       "options": {k: str(v) for k, v in
+                                   CD.bus_options(stage, st["cards"]).items()},
+                       "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# -------------------------------------------------------------- suit link ----
+@router.post("/suitlink/play")
+async def suitlink_play(req: QuickBet, user: User = Depends(betting_user),
+                        session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    if req.bet not in ("s", "h", "d", "c"):
+        raise HTTPException(400, "bet is s, h, d or c")
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    a = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 0)
+    b = CD.draw_card(pair.server_seed, pair.client_seed, nonce, 1)
+    ret = CD.suitlink_settle(req.bet, a, b)
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "suitlink", "suitlink_play", ret,
+        {"suit": req.bet, "cards": [a, b],
+         "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "suit": req.bet, "cards": [a, b],
+            "hits": (a[1] == req.bet) + (b[1] == req.bet),
+            "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
+
+
+# --------------------------------------------------------- high card flush ----
+@router.post("/hcf/deal")
+async def hcf_deal(req: QuickBet, user: User = Depends(betting_user),
+                   session: AsyncSession = Depends(get_session)):
+    from . import cards as CD
+    _casino_gate(user)
+    stake_m = _stake_or_400(req.stake, user)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+    hand = CD.hcf_deal(pair.server_seed, pair.client_seed, nonce)
+    k = CD.hcf_flush_len(hand)
+    mult = CD.hcf_paytable().get(k, Decimal(0))
+    rnd, win, balance = await _instant_round(
+        session, user, stake_m, "hcf", "hcf_deal", mult,
+        {"hand": hand, "flush_len": k,
+         "_pair_id": pair.id, "_nonce": nonce},
+        req.idempotency_key or secrets.token_hex(8))
+    await session.commit()
+    return {"round_id": rnd.id, "hand": hand, "flush_len": k,
+            "multiplier": str(mult), "payout": str(from_micros(win)),
+            "balance": str(from_micros(balance))}
 
 
 # ------------------------------------------------------------------ mines ----
