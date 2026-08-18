@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import Duel from "./Duel";
@@ -835,6 +835,10 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [spinCells, setSpinCells] = useState(false);
+  const [revealCol, setRevealCol] = useState(5);
+  const [spinSeq, setSpinSeq] = useState(0);
+  const prevLockedRef = useRef<Record<string, string>>({});
+  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   useEffect(() => {
     api.holdspinActive().then((r) => {
@@ -847,17 +851,23 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
   }, []);
 
   async function run(kind: "spin" | "respin") {
-    setErr(""); setBusy(true); setMsg(null); setSpinCells(true); setFresh(new Set());
+    setErr(""); setBusy(true); setMsg(null);
+    prevLockedRef.current = kind === "respin" ? { ...locked } : {};
+    if (kind !== "respin") setLocked({});
+    setFresh(new Set());
+    setRevealCol(-1); setSpinCells(true); setSpinSeq((s) => s + 1);
     try {
       const r = kind === "spin"
         ? await api.holdspinSpin(stake)
         : await api.holdspinRespin();
-      await new Promise((res) => setTimeout(res, 700));
-      setSpinCells(false);
       setLocked(r.locked);
       setFresh(new Set(Object.keys(r.coins).map(Number)));
       setRespins(r.respins);
       setCollected(r.collected);
+      await sleep(400);
+      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); }
+      await sleep(150);
+      setSpinCells(false);
       onBalance(r.balance);
       onPlayed();
       const grand = (r as any).grand && Number((r as any).grand) > 0;
@@ -874,7 +884,7 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         setMsg(`+${money(r.win)} — respins reset`);
       }
     } catch (e: any) {
-      setSpinCells(false); setErr(e.message);
+      setSpinCells(false); setRevealCol(5); setErr(e.message);
     } finally { setBusy(false); }
   }
 
@@ -901,24 +911,34 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
         </div>
       )}
 
-      <div className="rounded-xl border border-fuchsia-500/30 bg-gradient-to-b from-[#2b0a24] via-[#160512] to-black p-3">
-        <div className="grid grid-cols-5 gap-1.5">
+      <div className="relative overflow-hidden rounded-xl border border-fuchsia-500/30 bg-gradient-to-b from-[#2b0a24] via-[#160512] to-black p-3">
+        <span className="pointer-events-none absolute -left-7 top-1/2 -translate-y-1/2 rotate-12 text-[120px] leading-none opacity-[0.08]">🐷</span>
+        <span className="pointer-events-none absolute -right-7 top-1/2 -translate-y-1/2 -rotate-12 scale-x-[-1] text-[120px] leading-none opacity-[0.08]">🐷</span>
+        <div className="relative z-10 grid grid-cols-5 gap-1.5">
           {Array.from({ length: 15 }, (_, i) => {
+            const col = i % 5;
+            const held = String(i) in prevLockedRef.current;
+            if (spinCells && !held && col > revealCol) {
+              return <SpinCellStrip key={`s-${i}-${spinSeq}`} syms={PB_SYMS} seed={i} />;
+            }
+            const justIn = spinCells && !held && col === revealCol;
             const v = locked[String(i)];
             return (
               <div key={i}
                 className={`grid aspect-square place-items-center rounded-md border transition ${
+                  justIn ? "vs-stop" : ""} ${
                   v ? (fresh.has(i)
                         ? "reel-pop border-gold bg-gradient-to-b from-gold/30 to-amber-900/40 shadow-gold"
                         : "border-gold/50 bg-gradient-to-b from-gold/15 to-base-900")
-                    : spinCells ? "animate-pulse border-white/10 bg-base-900"
                     : "border-white/10 bg-base-900/80"}`}>
                 {v ? (
                   <span className="grid h-9 w-9 place-items-center rounded-full btn-gold font-mono text-[10px] font-black text-base-900">
                     {Number(v) >= 1 ? `${Number(v).toFixed(Number(v) % 1 ? 1 : 0)}x` : `${Number(v).toFixed(2)}x`}
                   </span>
                 ) : (
-                  <span className="text-lg opacity-20">🐷</span>
+                  <span className="text-xl opacity-70 drop-shadow-[0_2px_3px_rgba(0,0,0,0.7)]">
+                    {PB_SYMS[(i * 7 + spinSeq * 5) % PB_SYMS.length]}
+                  </span>
                 )}
               </div>
             );
@@ -2245,6 +2265,7 @@ function SugarBlast({ def, onBalance, onPlayed }: {
   const [err, setErr] = useState("");
   const [fsLeft, setFsLeft] = useState(0);
   const [bonusTotal, setBonusTotal] = useState("0");
+  const [dropSeq, setDropSeq] = useState(0);
   const inBonus = fsLeft > 0;
 
   useEffect(() => {
@@ -2265,10 +2286,12 @@ function SugarBlast({ def, onBalance, onPlayed }: {
     setHotSyms(new Set()); setPopSyms(new Set()); setSpinBlur(true);
     try {
       const r = kind === "buy" ? await api.tumbleBuy(stake) : await api.tumbleSpin(stake);
-      await sleep(450);
+      await sleep(340);
       setSpinBlur(false);
-      // play the cascade: grids[i] -> highlight steps[i] -> pop -> grids[i+1]
+      // the fresh board rains in column by column, then the cascade plays
+      setDropSeq((s) => s + 1);
       setGrid(r.grids[0]);
+      await sleep(480);
       let acc = 0;
       for (let i = 0; i < r.steps.length; i++) {
         await sleep(420);
@@ -2340,13 +2363,17 @@ function SugarBlast({ def, onBalance, onPlayed }: {
             </span>
           </div>
         )}
-        <div className={`grid grid-cols-6 gap-1 sm:gap-1.5 ${spinBlur ? "animate-pulse opacity-40" : ""}`}>
+        <div className={`grid grid-cols-6 gap-1 sm:gap-1.5 ${spinBlur ? "opacity-40 blur-[1px] transition-all" : ""}`}>
           {Array.from({ length: 30 }, (_, i) => {
             // backend grid is column-major (col*5+row); render row-major
             const col = i % 6, row = Math.floor(i / 6);
             const s = grid[col * 5 + row];
-            return <TumbleCell key={`${col}-${row}-${s}`} sym={s}
-              hot={cellHot(s)} popping={cellPop(s)} />;
+            return (
+              <div key={`${dropSeq}-${col}-${row}-${s}`} className="tb-in"
+                style={{ animationDelay: `${col * 45 + row * 35}ms` }}>
+                <TumbleCell sym={s} hot={cellHot(s)} popping={cellPop(s)} />
+              </div>
+            );
           })}
         </div>
       </div>
@@ -2390,6 +2417,26 @@ const DR_TIERS: [string, string, string][] = [
   ["super", "SUPER", "from-orange-400 to-red-600"],
 ];
 
+// the fortune board's resting symbols — what the reels show between coins
+const DR_SYMS = ["🐉", "🐲", "🏮", "🧧", "🐢", "🐟", "💰", "🎐"];
+const PB_SYMS = ["🐷", "🪙", "💵", "🏦", "🔨", "💰", "🎀", "⭐"];
+
+/* one hold&win cell mid-spin: a fast blurred mini-reel of theme symbols */
+function SpinCellStrip({ syms, seed }: { syms: string[]; seed: number }) {
+  const items = Array.from({ length: 4 }, (_, j) => syms[(seed + j * 3) % syms.length]);
+  return (
+    <div className="relative aspect-square overflow-hidden rounded-md border border-white/10 bg-base-900/80">
+      <div className="vs-strip absolute inset-x-0 blur-[1px]">
+        {[...items, ...items].map((s, j) => (
+          <div key={j} className="grid aspect-square w-full place-items-center text-xl">{s}</div>
+        ))}
+      </div>
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1/3 bg-gradient-to-b from-black/50 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/3 bg-gradient-to-t from-black/50 to-transparent" />
+    </div>
+  );
+}
+
 function GoldenDragon({ def, onBalance, onPlayed }: {
   def: import("../api").DragonDef;
   onBalance: (b: string) => void; onPlayed: () => void;
@@ -2405,6 +2452,10 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
   const [msg, setMsg] = useState<string | null>(null);
   const [spinCells, setSpinCells] = useState(false);
   const [hitTier, setHitTier] = useState<string | null>(null);
+  const [revealCol, setRevealCol] = useState(5);
+  const [spinSeq, setSpinSeq] = useState(0);
+  const prevLockedRef = useRef<Record<string, string>>({});
+  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   useEffect(() => {
     api.dragonActive().then((r) => {
@@ -2421,18 +2472,25 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
   const coinPay = (v: string) => (isTier(v) ? Number(def.jackpots[v]) : Number(v)) * bet;
 
   async function run(kind: "spin" | "respin" | "buy") {
-    setErr(""); setBusy(true); setMsg(null); setSpinCells(true);
-    setFresh(new Set()); setHitTier(null);
+    setErr(""); setBusy(true); setMsg(null); setHitTier(null);
+    // held coins stay put; everything else becomes a spinning mini-reel
+    prevLockedRef.current = kind === "respin" ? { ...locked } : {};
+    if (kind !== "respin") setLocked({});
+    setFresh(new Set());
+    setRevealCol(-1); setSpinCells(true); setSpinSeq((s) => s + 1);
     try {
       const r = kind === "spin" ? await api.dragonSpin(stake)
         : kind === "buy" ? await api.dragonBuy(stake)
         : await api.dragonRespin();
-      await new Promise((res) => setTimeout(res, 700));
-      setSpinCells(false);
       setLocked(r.locked);
       setFresh(new Set(Object.keys(r.coins).map(Number)));
       setRespins(r.respins);
       setCollected(r.collected);
+      // the columns stop left to right, like the real cabinets
+      await sleep(400);
+      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); }
+      await sleep(150);
+      setSpinCells(false);
       onBalance(r.balance);
       onPlayed();
       const tiers = Object.values(r.coins).filter(isTier);
@@ -2455,7 +2513,7 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
           : `+${money(r.win)} — respins reset`);
       }
     } catch (e: any) {
-      setSpinCells(false); setErr(e.message);
+      setSpinCells(false); setRevealCol(5); setErr(e.message);
     } finally { setBusy(false); }
   }
 
@@ -2509,19 +2567,28 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
         </div>
       )}
 
-      {/* the inferno grid */}
-      <div className="rounded-xl border border-red-600/40 bg-gradient-to-b from-[#3d0a04] via-[#1c0402] to-black p-3">
-        <div className="grid grid-cols-5 gap-1.5">
+      {/* the fortune board: dragons coiled behind the reels */}
+      <div className="relative overflow-hidden rounded-xl border border-red-600/40 bg-gradient-to-b from-[#3d0a04] via-[#1c0402] to-black p-3">
+        <span className="pointer-events-none absolute -left-7 top-1/2 -translate-y-1/2 rotate-12 text-[120px] leading-none opacity-[0.09]">🐉</span>
+        <span className="pointer-events-none absolute -right-7 top-1/2 -translate-y-1/2 -rotate-12 scale-x-[-1] text-[120px] leading-none opacity-[0.09]">🐉</span>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[radial-gradient(240px_36px_at_50%_0,rgba(240,180,41,0.18),transparent)]" />
+        <div className="relative z-10 grid grid-cols-5 gap-1.5">
           {Array.from({ length: 15 }, (_, i) => {
+            const col = i % 5;
+            const held = String(i) in prevLockedRef.current;
+            if (spinCells && !held && col > revealCol) {
+              return <SpinCellStrip key={`s-${i}-${spinSeq}`} syms={DR_SYMS} seed={i} />;
+            }
+            const justIn = spinCells && !held && col === revealCol;
             const v = locked[String(i)];
             const tier = v && isTier(v) ? DR_TIERS.find(([k]) => k === v) : null;
             return (
               <div key={i}
                 className={`grid aspect-square place-items-center rounded-md border transition ${
+                  justIn ? "vs-stop" : ""} ${
                   v ? (fresh.has(i)
                         ? "reel-pop border-gold bg-gradient-to-b from-gold/30 to-red-950/60 shadow-gold"
                         : "border-gold/50 bg-gradient-to-b from-gold/15 to-base-900")
-                    : spinCells ? "animate-pulse border-white/10 bg-base-900"
                     : "border-white/10 bg-base-900/80"}`}>
                 {v ? (
                   tier ? (
@@ -2534,7 +2601,9 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
                     </span>
                   )
                 ) : (
-                  <span className="text-lg opacity-20">🐉</span>
+                  <span className="text-xl opacity-70 drop-shadow-[0_2px_3px_rgba(0,0,0,0.7)]">
+                    {DR_SYMS[(i * 7 + spinSeq * 5) % DR_SYMS.length]}
+                  </span>
                 )}
               </div>
             );

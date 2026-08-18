@@ -209,6 +209,32 @@
     will-change: transform;
   }
 
+  /* candy cells raining into the tumble grid, column by column */
+  @keyframes tb-in {
+    0% { transform: translateY(-140%); opacity: 0; }
+    70% { opacity: 1; }
+    85% { transform: translateY(5%); }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  .tb-in {
+    animation: tb-in 0.45s cubic-bezier(0.25, 0.6, 0.35, 1) both;
+  }
+  @keyframes tb-out {
+    to { transform: translateY(45%); opacity: 0; }
+  }
+  .tb-out {
+    animation: tb-out 0.3s ease-in both;
+  }
+
+  /* the fast flicker inside a hold&win cell while its column still spins */
+  @keyframes cell-flicker {
+    0% { transform: translateY(-30%); }
+    100% { transform: translateY(0%); }
+  }
+  .cell-flicker {
+    animation: cell-flicker 0.16s linear infinite;
+  }
+
   /* the strip slamming to a stop: overshoot, sink, settle */
   @keyframes vs-stop {
     0% { transform: translateY(-16px); }
