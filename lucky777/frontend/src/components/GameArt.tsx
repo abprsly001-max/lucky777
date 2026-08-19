@@ -727,19 +727,27 @@ function _splitTitle(t: string): string[] {
 }
 
 /* the 3D lockup: dark drop shadow, colored extrude, gradient face, sheen */
-function TitleLockup({ id, lines, ac, cx, cy, maxW = 290, scale = 1 }: {
+function TitleLockup({ id, lines, ac, cx, cy, maxW = 206, scale = 1 }: {
   id: string; lines: string[]; ac: [string, string];
   cx: number; cy: number; maxW?: number; scale?: number;
 }) {
+  // the tile CROPS the poster's sides (slice fit), so the title must live in
+  // the SAFE band around center — maxW is that band, not the full canvas.
   const longest = lines.reduce((m, l) => Math.max(m, l.length), 1);
-  const size = Math.max(15, Math.min(38, (maxW / longest) * 1.62)) * scale;
+  const size = Math.max(13, Math.min(38, maxW / (longest * 0.68))) * scale;
   const lh = size * 0.98;
   const y0 = cy - ((lines.length - 1) * lh) / 2;
+  // belt and braces: if a line would still overrun the band, squeeze it
+  const fitW = (l: string): number | undefined => {
+    const est = l.length * size * 0.72;
+    return est > maxW ? maxW : undefined;
+  };
   const layer = (dy: number, fill: string, stroke?: string, sw?: number, op?: number) =>
     lines.map((l, i) => (
       <text key={`${dy}-${fill}-${i}`} x={cx} y={y0 + i * lh + dy} fontSize={size}
         fontWeight="900" textAnchor="middle" fill={fill}
         stroke={stroke} strokeWidth={sw} opacity={op}
+        textLength={fitW(l)} lengthAdjust="spacingAndGlyphs"
         fontFamily="'Arial Black', Impact, sans-serif"
         style={{ letterSpacing: "-0.02em" }}
         dominantBaseline="middle">{l}</text>
@@ -752,6 +760,7 @@ function TitleLockup({ id, lines, ac, cx, cy, maxW = 290, scale = 1 }: {
       {lines.map((l, i) => (
         <text key={`sheen-${i}`} x={cx} y={y0 + i * lh - size * 0.02} fontSize={size}
           fontWeight="900" textAnchor="middle" fill="rgba(255,255,255,0.28)"
+          textLength={fitW(l)} lengthAdjust="spacingAndGlyphs"
           fontFamily="'Arial Black', Impact, sans-serif"
           style={{ letterSpacing: "-0.02em", clipPath: `inset(0 0 55% 0)` }}
           dominantBaseline="middle">{l}</text>
