@@ -616,9 +616,11 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center justify-between px-2.5 py-2">
-                  <span className="truncate text-[13px] font-bold text-slate-100">{g.name}</span>
-                  <span className="text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-gold">›</span>
+                <div className="flex min-h-[38px] items-center justify-between gap-1 px-2 py-1.5 sm:px-2.5">
+                  <span className="line-clamp-2 min-w-0 text-[11px] font-bold leading-tight text-slate-100 sm:text-[13px]">
+                    {g.name}
+                  </span>
+                  <span className="shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-gold">›</span>
                 </div>
               </button>
             ))}
