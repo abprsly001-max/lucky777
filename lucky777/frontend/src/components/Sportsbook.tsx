@@ -1119,9 +1119,26 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
   ev: SbEvent; selected: Set<number>; onPick: PickFn; onBack: () => void;
 }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
-    { winner: true, spread: true, total: true });
+    { winner: true, spread: true, total: true, pwinner: true, ptotal: true });
   const [moreSpread, setMoreSpread] = useState(false);
   const [moreTotal, setMoreTotal] = useState(false);
+  const [scope, setScope] = useState("game");
+
+  const SCOPE_LABEL: Record<string, string> = {
+    f5: "1st 5 Innings", h1q: "1st Half", h1s: "1st Half", p1: "1st Period",
+  };
+  const periodScopes = useMemo(() => {
+    const seen: string[] = [];
+    for (const m of ev.markets) {
+      if (m.type.startsWith("period:")) {
+        const s = m.type.split(":")[1];
+        if (!seen.includes(s)) seen.push(s);
+      }
+    }
+    return seen;
+  }, [ev.markets]);
+  const scopeMarket = (s: string, kind: string) =>
+    ev.markets.find((m) => m.type === `period:${s}:${kind}`);
 
   const h2h = ev.markets.find((m) => m.type === "h2h");
   // the book's style: friendliest line for the first side at the top,
@@ -1233,37 +1250,95 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
         </div>
       </div>
 
-      {/* scope tabs — period markets slot in here as they come online */}
+      {/* scope tabs — the game, then every period scope with open markets */}
       <div className="-mx-1 flex gap-1 overflow-x-auto px-1">
-        <span className="shrink-0 rounded-lg bg-base-700 px-4 py-1.5 text-xs font-bold text-gold">Game</span>
+        <button onClick={() => setScope("game")}
+          className={`shrink-0 rounded-lg px-4 py-1.5 text-xs font-bold transition ${
+            scope === "game" ? "bg-base-700 text-gold" : "bg-base-800 text-slate-400 hover:bg-base-700"}`}>
+          Game
+        </button>
+        {periodScopes.map((s) => (
+          <button key={s} onClick={() => setScope(s)}
+            className={`shrink-0 rounded-lg px-4 py-1.5 text-xs font-bold transition ${
+              scope === s ? "bg-base-700 text-gold" : "bg-base-800 text-slate-400 hover:bg-base-700"}`}>
+            {SCOPE_LABEL[s] ?? s}
+          </button>
+        ))}
       </div>
 
-      {/* market groups */}
-      <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
-        {groupHead("winner", "Game Winner")}
-        {openGroups.winner && h2h && (
-          <div className="grid grid-cols-2 gap-1 p-2">
-            {pairBtn(h2h, h2h.selections.find((x) => x.key === "home"), ev.home)}
-            {pairBtn(h2h, h2h.selections.find((x) => x.key === "away"), ev.away)}
+      {scope === "game" ? (
+        <>
+          {/* market groups */}
+          <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+            {groupHead("winner", "Game Winner")}
+            {openGroups.winner && h2h && (
+              <div className="grid grid-cols-2 gap-1 p-2">
+                {pairBtn(h2h, h2h.selections.find((x) => x.key === "home"), ev.home)}
+                {pairBtn(h2h, h2h.selections.find((x) => x.key === "away"), ev.away)}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {spreads.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
-          {groupHead("spread", spreads[0].name === "Run Line" ? "Run Line" : "Spread")}
-          {openGroups.spread && ladder(spreads, moreSpread, setMoreSpread, (m, side) =>
-            side === 0 ? `${ev.home} ${fmtLine(Number(m.line))}`
-                       : `${ev.away} ${fmtLine(-Number(m.line))}`)}
-        </div>
-      )}
+          {spreads.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+              {groupHead("spread", spreads[0].name === "Run Line" ? "Run Line" : "Spread")}
+              {openGroups.spread && ladder(spreads, moreSpread, setMoreSpread, (m, side) =>
+                side === 0 ? `${ev.home} ${fmtLine(Number(m.line))}`
+                           : `${ev.away} ${fmtLine(-Number(m.line))}`)}
+            </div>
+          )}
 
-      {totals.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
-          {groupHead("total", "Total")}
-          {openGroups.total && ladder(totals, moreTotal, setMoreTotal, (m, side) =>
-            side === 0 ? `Over ${m.line}` : `Under ${m.line}`)}
-        </div>
+          {totals.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+              {groupHead("total", "Total")}
+              {openGroups.total && ladder(totals, moreTotal, setMoreTotal, (m, side) =>
+                side === 0 ? `Over ${m.line}` : `Under ${m.line}`)}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {(() => {
+            const w = scopeMarket(scope, "h2h");
+            const t = scopeMarket(scope, "total");
+            const label = SCOPE_LABEL[scope] ?? scope;
+            return (
+              <>
+                {w && (
+                  <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+                    {groupHead("pwinner", `${label} Winner`)}
+                    {openGroups.pwinner && (
+                      <div className="grid grid-cols-2 gap-1 p-2">
+                        {pairBtn(w, w.selections.find((x) => x.key === "home"), ev.home)}
+                        {pairBtn(w, w.selections.find((x) => x.key === "away"), ev.away)}
+                      </div>
+                    )}
+                    <p className="px-3 pb-2 text-[10px] text-slate-500">
+                      A tie over the {label.toLowerCase()} refunds the bet. Settles the
+                      moment the {label.toLowerCase()} is done — no waiting for full time.
+                    </p>
+                  </div>
+                )}
+                {t && (
+                  <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+                    {groupHead("ptotal", `${label} Total`)}
+                    {openGroups.ptotal && (
+                      <div className="grid grid-cols-2 gap-1 p-2">
+                        {pairBtn(t, t.selections.find((x) => x.key === "over"), `Over ${t.line}`, true)}
+                        {pairBtn(t, t.selections.find((x) => x.key === "under"), `Under ${t.line}`, true)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!w && !t && (
+                  <div className="rounded-xl border border-white/5 bg-base-800 p-6 text-center text-sm text-slate-500 shadow-card">
+                    This period is in the books — its markets have settled.
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </>
       )}
     </div>
   );

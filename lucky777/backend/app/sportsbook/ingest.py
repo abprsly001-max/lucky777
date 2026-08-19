@@ -154,13 +154,17 @@ async def sync_scores(session: AsyncSession, include_finals: bool = True) -> dic
             await live_engine.go_live(session, [ev.id])
             went_live += 1
         prev_h, prev_a = ev.home_score or 0, ev.away_score or 0
-        ev.period = "LIVE"
+        key = await live_engine._sport_key(session, ev)
+        starts = ev.starts_at if ev.starts_at.tzinfo else ev.starts_at.replace(tzinfo=timezone.utc)
+        frac = min(0.9, max(0.1, (now - starts).total_seconds() / (3 * 3600)))
+        # estimate the period off the game clock so the line score and the
+        # period markets track real innings/quarters, not one "LIVE" bucket
+        from ..config import settings as _st
+        ev.period = live_engine._period(key, int(frac * _st.live_total_steps),
+                                        _st.live_total_steps)
         if (h, a) != (prev_h, prev_a) or went_live:
             ev.home_score, ev.away_score = h, a
             live_engine._tally_period(ev, h - prev_h, a - prev_a)
-            key = await live_engine._sport_key(session, ev)
-            starts = ev.starts_at if ev.starts_at.tzinfo else ev.starts_at.replace(tzinfo=timezone.utc)
-            frac = min(0.9, max(0.1, (now - starts).total_seconds() / (3 * 3600)))
             sels = (await session.execute(
                 select(Selection).join(Market, Market.id == Selection.market_id)
                 .where(Market.event_id == ev.id, Market.type == "h2h",
@@ -173,6 +177,8 @@ async def sync_scores(session: AsyncSession, include_finals: bool = True) -> dic
                     session.add(OddsHistory(selection_id=sl.id,
                                             odds_decimal=sl.odds_decimal))
             await live_engine._reprice_alts(session, ev, key, frac)
+            _, pg = await live_engine._process_periods(session, ev, key)
+            graded += 1 if pg else 0
             updated += 1
 
     result = {"went_live": went_live, "updated": updated, "graded": graded,

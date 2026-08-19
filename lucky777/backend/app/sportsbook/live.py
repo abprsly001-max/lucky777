@@ -27,7 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from .models import Competition, Event, Market, OddsHistory, Selection, Sport
 from .odds import apply_margin
-from .settlement import grade_event, settle_bets
+from .settlement import (grade_event, grade_period_selection, period_score,
+                         settle_bets)
 
 # per-sport scoring behaviour per tick: (p_score_per_side, points_choices)
 SCORING = {
@@ -150,8 +151,95 @@ async def go_live(session: AsyncSession, event_ids: list[int] | None = None,
                 )).scalars().all():
                     s.opening_odds = s.odds_decimal
         await _build_alt_ladders(session, ev, key, main_spread, main_total)
+        await _build_period_markets(session, ev, key)
     await session.flush()
     return evs
+
+
+async def _build_period_markets(session: AsyncSession, ev: Event,
+                                sport_key: str) -> None:
+    """The scoreboard scopes: 1st-5-innings / 1st-half / 1st-period winner
+    and total, priced off the full-game moneyline, graded the moment the
+    scope is in the books."""
+    defs = PERIOD_DEFS.get(sport_key)
+    if not defs:
+        return
+    p_home = await _h2h_home_prob(session, ev)
+    for scope, label, total_line in defs:
+        # a shorter sample drags the favourite back toward even
+        p_scope = Decimal("0.5") + (p_home - Decimal("0.5")) * Decimal("0.8")
+        w = Market(event_id=ev.id, type=f"period:{scope}:h2h",
+                   name=f"{label} Winner", status="open")
+        t = Market(event_id=ev.id, type=f"period:{scope}:total",
+                   name=f"{label} Total", line=str(total_line), status="open")
+        session.add_all([w, t])
+        await session.flush()
+        wp = _price_pair(p_scope)
+        tp = _price_pair(Decimal("0.5"))
+        session.add_all([
+            Selection(market_id=w.id, key="home", name=ev.home,
+                      odds_decimal=str(wp[0]), opening_odds=str(wp[0])),
+            Selection(market_id=w.id, key="away", name=ev.away,
+                      odds_decimal=str(wp[1]), opening_odds=str(wp[1])),
+            Selection(market_id=t.id, key="over", name=f"Over {total_line}",
+                      odds_decimal=str(tp[0]), opening_odds=str(tp[0])),
+            Selection(market_id=t.id, key="under", name=f"Under {total_line}",
+                      odds_decimal=str(tp[1]), opening_odds=str(tp[1])),
+        ])
+
+
+async def _process_periods(session: AsyncSession, ev: Event,
+                           sport_key: str) -> tuple[int, int]:
+    """Reprice open period markets with the scope score; grade the ones
+    whose scope is finished. Returns (repriced, graded)."""
+    rows = (await session.execute(
+        select(Selection, Market)
+        .join(Market, Market.id == Selection.market_id)
+        .where(Market.event_id == ev.id,
+               Market.type.like("period:%"),
+               Market.status == "open"))).all()
+    if not rows:
+        return 0, 0
+    mw = Decimal(str(MARGIN_WEIGHT.get(sport_key, 0.5)))
+    pace = Decimal(str(PACE_PROB.get(sport_key, 0.05)))
+    by_market: dict[int, list[Selection]] = {}
+    markets: dict[int, Market] = {}
+    for sel, m in rows:
+        by_market.setdefault(m.id, []).append(sel)
+        markets[m.id] = m
+    repriced = graded = 0
+    for mid, sels in by_market.items():
+        m = markets[mid]
+        scope = m.type.split(":")[1]
+        h, a, complete = period_score(ev, scope)
+        if complete:
+            for sel in sels:
+                sel.result = grade_period_selection(m, sel, h, a)
+                sel.status = "settled"
+                graded += 1
+            m.status = "settled"
+            continue
+        first = next((s for s in sels if s.key in ("home", "over")), None)
+        second = next((s for s in sels if s.key in ("away", "under")), None)
+        if first is None or second is None:
+            continue
+        p_open = 1 / Decimal(first.opening_odds or first.odds_decimal)
+        p_open = p_open / (p_open + 1 / Decimal(second.opening_odds
+                                                or second.odds_decimal))
+        if m.type.endswith(":h2h"):
+            shift = max(Decimal("-0.35"), min(Decimal("0.35"),
+                        Decimal(h - a) * mw * Decimal("0.4")))
+        else:
+            line = Decimal(m.line or "1")
+            shift = max(Decimal("-0.35"), min(Decimal("0.35"),
+                        (Decimal(h + a) - line / 2) * pace))
+        priced = _price_pair(p_open + shift)
+        for sel, price in zip((first, second), priced):
+            new = str(price)
+            if new != sel.odds_decimal:
+                sel.odds_decimal = new
+                repriced += 1
+    return repriced, graded
 
 
 # --------------------------------------------------------- alternate lines ----
@@ -168,6 +256,15 @@ PACE_PROB = {
 ALT_OFFSETS = [Decimal(x) for x in
                ("-2.5", "-2.0", "-1.5", "-1.0", "-0.5", "0",
                 "0.5", "1.0", "1.5", "2.0", "2.5")]
+
+# period markets per sport: (scope id, display label, opening period total)
+PERIOD_DEFS: dict[str, list[tuple[str, str, Decimal]]] = {
+    "baseball": [("f5", "1st 5 Innings", Decimal("4.5"))],
+    "basketball": [("h1q", "1st Half", Decimal("112.5"))],
+    "americanfootball": [("h1q", "1st Half", Decimal("21.5"))],
+    "icehockey": [("p1", "1st Period", Decimal("1.5"))],
+    "soccer": [("h1s", "1st Half", Decimal("1.5"))],
+}
 
 # a sane opening total per sport, for games the feed never priced
 DEFAULT_TOTALS = {
@@ -328,7 +425,7 @@ async def tick(session: AsyncSession) -> dict:
     evs = (await session.execute(
         select(Event).where(Event.status == "live"))).scalars().all()
 
-    ended, repriced = [], 0
+    ended, repriced, period_graded = [], 0, 0
     for ev in evs:
         key = await _sport_key(session, ev)
         ev.live_step += 1
@@ -364,9 +461,12 @@ async def tick(session: AsyncSession) -> dict:
                     session.add(OddsHistory(selection_id=s.id, odds_decimal=s.odds_decimal))
             repriced += n
         repriced += await _reprice_alts(session, ev, key, ev.live_step / total)
+        pr, pg = await _process_periods(session, ev, key)
+        repriced += pr
+        period_graded += pg
 
     result = {"live": len(evs) - len(ended), "ended": len(ended), "repriced": repriced}
-    if ended:
+    if ended or period_graded:
         result["settlement"] = await settle_bets(session)
     await session.flush()
     return result

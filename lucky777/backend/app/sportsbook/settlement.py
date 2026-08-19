@@ -21,6 +21,49 @@ from .models import Bet, BetSelection, Event, Market, Selection
 from .odds import result_factor
 
 
+# ---------------------------------------------------------- period scopes ----
+# scope id -> (labels inside the scope, labels that prove the scope is over)
+PERIOD_SCOPE_LABELS: dict[str, tuple[set[str], set[str]]] = {
+    "f5": ({f"Inn {i}" for i in range(1, 6)},
+           {f"Inn {i}" for i in range(6, 10)}),
+    "h1q": ({"Q1", "Q2", "HT"}, {"Q3", "Q4"}),
+    "h1s": ({"1H", "HT"}, {"2H"}),
+    "p1": ({"P1"}, {"P2", "P3"}),
+}
+
+
+def period_score(event: Event, scope: str) -> tuple[int, int, bool]:
+    """(home, away, complete) for a period scope, off the line score."""
+    import json as _json
+    inside, after = PERIOD_SCOPE_LABELS.get(scope, (set(), set()))
+    try:
+        rows = _json.loads(event.period_scores or "[]")
+    except ValueError:
+        rows = []
+    h = sum(r["h"] for r in rows if r["p"] in inside)
+    a = sum(r["a"] for r in rows if r["p"] in inside)
+    complete = (event.status == "ended"
+                or any(r["p"] in after for r in rows))
+    return h, a, complete
+
+
+def grade_period_selection(market: Market, sel: Selection,
+                           h: int, a: int) -> str:
+    """Grade one period-market selection off the scope score."""
+    kind = market.type.split(":")[2] if market.type.count(":") >= 2 else ""
+    if kind == "h2h":
+        if h == a:
+            return "void"                    # two-way, no draw offered
+        return "won" if (sel.key == "home") == (h > a) else "lost"
+    if kind == "total":
+        line = Decimal(market.line or "0")
+        total = Decimal(h + a)
+        if total == line:
+            return "push"
+        return "won" if (sel.key == "over") == (total > line) else "lost"
+    return "void"
+
+
 def grade_selection(market: Market, sel: Selection, home: int, away: int) -> str:
     """Map a final score to one of: won | lost | push | void."""
     t = market.type
@@ -84,7 +127,13 @@ async def grade_event(session: AsyncSession, event: Event,
     for sel, market in rows:
         if market.type.startswith("prop:"):
             continue                 # player stats aren't in the score; the desk grades these
-        if market.type == "h2h" and home == away and "draw" not in two_way_h2h[market.id]:
+        if market.status == "settled" and sel.result is not None:
+            continue                 # a period market that already paid mid-game
+        if market.type.startswith("period:"):
+            scope = market.type.split(":")[1]
+            ph, pa, _ = period_score(event, scope)
+            sel.result = grade_period_selection(market, sel, ph, pa)
+        elif market.type == "h2h" and home == away and "draw" not in two_way_h2h[market.id]:
             sel.result = "void"      # tie on a market that never offered the draw
         else:
             sel.result = grade_selection(market, sel, home, away)

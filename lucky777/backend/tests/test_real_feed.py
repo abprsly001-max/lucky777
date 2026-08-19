@@ -71,7 +71,7 @@ async def test_feed_scores_take_a_game_live_then_grade_it(session, monkeypatch):
     assert r["went_live"] == 1
     assert StubProvider.polled == ["baseball_mlb"]   # only the sport in play
     assert ev.status == "live" and (ev.home_score, ev.away_score) == (1, 0)
-    assert ev.period == "LIVE"
+    assert ev.period.startswith("Inn")   # clock-estimated inning
     alts = (await session.execute(
         select(Market).where(Market.event_id == ev.id,
                              Market.type == "alt_totals"))).scalars().all()

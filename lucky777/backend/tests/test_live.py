@@ -194,3 +194,61 @@ async def test_total_ladder_refills_as_the_score_climbs(session):
                              Market.status == "open"))).scalars().all()
     assert len(open_totals) >= 5
     assert all(float(mm.line) >= 6 for mm in open_totals)
+
+
+@pytest.mark.asyncio
+async def test_period_markets_open_reprice_and_grade_midgame(session):
+    """F5-style scopes: markets open at kickoff, grade when the scope is in
+    the books, and the tickets on them pay before the game ends."""
+    u, ev, m, t, _ = await _game(session, sport="baseball")
+    await live.go_live(session, [ev.id])
+
+    per = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type.like("period:%")))).scalars().all()
+    assert {p.type for p in per} == {"period:f5:h2h", "period:f5:total"}
+    assert all(p.status == "open" for p in per)
+
+    # a live ticket on the F5 winner (home)
+    f5w = next(p for p in per if p.type == "period:f5:h2h")
+    home_sel = (await session.execute(
+        select(Selection).where(Selection.market_id == f5w.id,
+                                Selection.key == "home"))).scalar_one()
+    bet = await place_bet(session, user_id=u.id,
+                          legs=[{"selection_id": home_sel.id}],
+                          stake_micros=to_micros("10"), accept_changes=True,
+                          idempotency_key="f5bet")
+
+    # hand-write a line score where the scope completes 3-1 to the home side
+    ev.period_scores = json.dumps(
+        [{"p": f"Inn {i}", "h": x, "a": y} for i, (x, y) in
+         enumerate([(1, 0), (0, 0), (2, 1), (0, 0), (0, 0), (1, 2)], start=1)])
+    _, graded = await live._process_periods(session, ev, "baseball")
+    assert graded == 4                       # both markets, both sides
+    assert f5w.status == "settled"
+    assert home_sel.result == "won"
+
+    await live.settle_bets(session)
+    await session.refresh(bet)
+    assert bet.status == "won"
+    assert ev.status == "live"               # the game itself is still going
+
+
+@pytest.mark.asyncio
+async def test_period_markets_survive_full_time_grading(session):
+    """A period market not settled mid-game grades at FT from the line
+    score; one already settled keeps its result."""
+    u, ev, m, t, _ = await _game(session, sport="baseball")
+    await live.go_live(session, [ev.id])
+    for _ in range(settings.live_total_steps):
+        await live.tick(session)
+    assert ev.status == "ended"
+    per = (await session.execute(
+        select(Market).where(Market.event_id == ev.id,
+                             Market.type.like("period:%")))).scalars().all()
+    assert per and all(p.status == "settled" for p in per)
+    sels = (await session.execute(
+        select(Selection).join(Market, Market.id == Selection.market_id)
+        .where(Market.event_id == ev.id,
+               Market.type.like("period:%")))).scalars().all()
+    assert all(s.result in ("won", "lost", "push", "void") for s in sels)
