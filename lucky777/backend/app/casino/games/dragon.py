@@ -42,7 +42,20 @@ COIN_VALUES = [(Decimal("0.5"), 40), (Decimal("1"), 30), (Decimal("2"), 15),
                (Decimal("3"), 8), (Decimal("5"), 4), (Decimal("10"), 2),
                (Decimal("25"), 1)]
 
+# HOT coins: a cash coin can land stamped x2 / x3 / x5 -- the stamp
+# multiplies that coin's face. Jackpot coins never carry a stamp. The
+# expected boost folds straight into the cash mean, so the return stays
+# exactly solved and _normalize absorbs the whole feature.
+P_HOT = Decimal("0.10")            # chance a landed cash coin is stamped
+HOT_MULTS: list[tuple[int, int]] = [(2, 60), (3, 30), (5, 10)]
+
 _scale = Decimal(1)     # set by _normalize; applies to CASH faces only
+
+
+def _hot_factor() -> Decimal:
+    tot = sum(w for _, w in HOT_MULTS)
+    e_mult = sum(Decimal(m) * w for m, w in HOT_MULTS) / tot
+    return Decimal(1) + P_HOT * (e_mult - 1)
 
 
 def _jp_mean() -> Decimal:
@@ -56,7 +69,7 @@ def _cash_mean_unscaled() -> Decimal:
 
 def _mean_coin() -> Decimal:
     p_cash = Decimal(1) - sum(JP_PROB.values())
-    return _jp_mean() + p_cash * _cash_mean_unscaled() * _scale
+    return _jp_mean() + p_cash * _cash_mean_unscaled() * _scale * _hot_factor()
 
 
 def _binom_p(n: int, k: int, p: Decimal) -> Decimal:
@@ -115,7 +128,8 @@ def _normalize() -> None:
     room = TARGET_RTP - fixed
     if room <= 0:                      # ladder alone would beat the target
         raise RuntimeError("jackpot ladder exceeds target RTP")
-    _scale = (room / (coins * p_cash * _cash_mean_unscaled())).quantize(
+    _scale = (room / (coins * p_cash * _cash_mean_unscaled()
+                      * _hot_factor())).quantize(
         Decimal("0.0001"), rounding="ROUND_DOWN")
 
 
@@ -128,14 +142,19 @@ def scaled_coin_values() -> list[tuple[Decimal, int]]:
 
 
 def coin_multiplier(token: str) -> Decimal:
-    """Bet-multiple a landed coin pays: jackpot tier name or a cash face."""
+    """Bet-multiple a landed coin pays: jackpot tier name, a cash face, or a
+    HOT cash face like '1.25x3' (face times its stamp)."""
     if token in JACKPOTS:
         return JACKPOTS[token]
+    if "x" in token:
+        face, mult = token.split("x", 1)
+        return Decimal(face) * Decimal(mult)
     return Decimal(token)
 
 
-def _draw_coin(f: float) -> str:
-    """One landed coin: jackpot tier name, or a cash face as a string."""
+def _draw_coin(f: float, hot_f: float | None = None) -> str:
+    """One landed coin: jackpot tier name, or a cash face as a string --
+    possibly stamped hot ('facexM') when the hot draw says so."""
     x = Decimal(str(f))
     acc = Decimal(0)
     for t in ("mini", "minor", "major", "maxi", "super"):
@@ -147,12 +166,26 @@ def _draw_coin(f: float) -> str:
     tot = sum(w for _, w in vals)
     rem = (x - acc) / (Decimal(1) - acc)     # renormalized to [0, 1)
     target = rem * tot
+    face = str(vals[-1][0])
     run = 0
     for v, w in vals:
         run += w
         if target < run:
-            return str(v)
-    return str(vals[-1][0])
+            face = str(v)
+            break
+    if hot_f is not None:
+        h = Decimal(str(hot_f))
+        if h < P_HOT:
+            # which stamp: renormalize the hit onto the weighted stamps
+            hw_tot = sum(w for _, w in HOT_MULTS)
+            hx = (h / P_HOT) * hw_tot
+            hrun = 0
+            for m, w in HOT_MULTS:
+                hrun += w
+                if hx < hrun:
+                    return f"{face}x{m}"
+            return f"{face}x{HOT_MULTS[-1][0]}"
+    return face
 
 
 @dataclass(frozen=True)
@@ -162,24 +195,24 @@ class BaseSpin:
 
 
 def base_spin(server: str, client: str, nonce: int) -> BaseSpin:
-    fs = fairness.floats(server, client, nonce, CELLS * 2)
+    fs = fairness.floats(server, client, nonce, CELLS * 3)
     coins: dict[int, str] = {}
     for cell in range(CELLS):
         if Decimal(str(fs[cell])) < P_COIN:
-            coins[cell] = _draw_coin(fs[CELLS + cell])
+            coins[cell] = _draw_coin(fs[CELLS + cell], fs[CELLS * 2 + cell])
     return BaseSpin(coins=coins, triggered=len(coins) >= TRIGGER)
 
 
 def respin(server: str, client: str, nonce: int,
            locked_cells: list[int]) -> dict[int, str]:
     """One respin over the empty cells; returns newly landed coins."""
-    fs = fairness.floats(server, client, nonce, CELLS * 2)
+    fs = fairness.floats(server, client, nonce, CELLS * 3)
     new: dict[int, str] = {}
     for cell in range(CELLS):
         if cell in locked_cells:
             continue
         if Decimal(str(fs[cell])) < P_RESPIN:
-            new[cell] = _draw_coin(fs[CELLS + cell])
+            new[cell] = _draw_coin(fs[CELLS + cell], fs[CELLS * 2 + cell])
     return new
 
 
@@ -210,7 +243,7 @@ def buy_spin(server: str, client: str, nonce: int) -> BaseSpin:
     """A base spin conditioned on triggering: draw the coin count from the
     conditional distribution, place the coins by partial shuffle, then draw
     each face. Exactly the distribution of a natural trigger."""
-    fs = fairness.floats(server, client, nonce, 1 + CELLS + CELLS)
+    fs = fairness.floats(server, client, nonce, 1 + CELLS * 3)
     ptrig = _p_trigger()
     target = Decimal(str(fs[0])) * ptrig
     acc = Decimal(0)
@@ -225,5 +258,6 @@ def buy_spin(server: str, client: str, nonce: int) -> BaseSpin:
         j = i + int(Decimal(str(fs[1 + i])) * (CELLS - i))
         j = min(j, CELLS - 1)
         cells[i], cells[j] = cells[j], cells[i]
-    coins = {cells[i]: _draw_coin(fs[1 + CELLS + i]) for i in range(k)}
+    coins = {cells[i]: _draw_coin(fs[1 + CELLS + i], fs[1 + CELLS * 2 + i])
+             for i in range(k)}
     return BaseSpin(coins=coins, triggered=True)

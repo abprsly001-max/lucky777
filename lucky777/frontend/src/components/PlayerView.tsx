@@ -572,10 +572,11 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
            ["table", "🃏", "Tables"], ["quick", "⚡", "Quick"]] as const)
           .map(([id, icon, label]) => (
           <button key={id} onClick={() => setCat(id)}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 transition ${
+            className={`flex min-w-0 items-center justify-center gap-1 rounded-xl px-1 py-2.5 transition sm:gap-1.5 ${
               cat === id ? "btn-gold text-base-900 shadow-gold" : "text-slate-300 hover:bg-white/5"}`}>
-            <span>{icon}</span>{label}
-            <span className={`rounded-full px-1.5 text-[9px] font-black ${
+            <span className="hidden sm:inline">{icon}</span>
+            <span className="truncate text-[11px] sm:text-xs">{label}</span>
+            <span className={`hidden shrink-0 rounded-full px-1.5 text-[9px] font-black sm:inline ${
               cat === id ? "bg-black/20" : "bg-white/10 text-slate-400"}`}>
               {(lobby?.games ?? []).filter((g) => id === "all" || g.category === id).length}
             </span>
@@ -2497,8 +2498,22 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
   }, []);
 
   const bet = Number(stake) || 0;
+  const [intro, setIntro] = useState(false);
+  const [tally, setTally] = useState<{ total: string; coins: number;
+    grand: boolean } | null>(null);
   const isTier = (v: string) => (def.jackpots as Record<string, string>)[v] !== undefined;
-  const coinPay = (v: string) => (isTier(v) ? Number(def.jackpots[v]) : Number(v)) * bet;
+  const stampOf = (v: string): number | null => {
+    if (isTier(v) || !v.includes("x")) return null;
+    return Number(v.split("x")[1]) || null;
+  };
+  const coinPay = (v: string) => {
+    if (isTier(v)) return Number(def.jackpots[v]) * bet;
+    if (v.includes("x")) {
+      const [face, m] = v.split("x");
+      return Number(face) * Number(m) * bet;
+    }
+    return Number(v) * bet;
+  };
 
   async function run(kind: "spin" | "respin" | "buy") {
     setErr(""); setBusy(true); setMsg(null); setHitTier(null);
@@ -2529,11 +2544,17 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
       const grand = (r as any).grand && Number((r as any).grand) > 0;
       if (kind !== "respin" && (r as any).triggered) {
         setInFeature(true);
+        setIntro(true);
+        window.setTimeout(() => setIntro(false), 1600);
         setMsg(tiers.length
           ? `🐉 ${tiers.map((t) => t.toUpperCase()).join(" + ")} JACKPOT! Coins locked`
           : `🐉 HOLD & WIN! ${Object.keys(r.locked).length} coins locked`);
       } else if (r.status === "settled") {
         setInFeature(false);
+        if (kind === "respin") {
+          setTally({ total: r.collected, coins: Object.keys(r.locked).length,
+                     grand: !!grand });
+        }
         if (grand) setMsg(`🔥 FULL GRID — GRAND ${def.grand}× +${money((r as any).grand)}! Total ${money(r.collected)}`);
         else if (kind === "respin") setMsg(`Feature over — collected ${money(r.collected)}`);
         else if (tiers.length) setMsg(`💥 ${tiers.map((t) => t.toUpperCase()).join(" + ")} JACKPOT — paid ${money(r.win)}`);
@@ -2576,7 +2597,7 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
             </div>
           </div>
         ))}
-        <div className="rounded-md border border-gold/60 bg-gradient-to-b from-gold/25 to-amber-950/60 px-1 py-1 text-center shadow-gold">
+        <div className="tile-shine vs-hot rounded-md border border-gold/60 bg-gradient-to-b from-gold/25 to-amber-950/60 px-1 py-1 text-center shadow-gold">
           <div className="bg-gradient-to-b from-yellow-200 to-amber-500 bg-clip-text text-[8px] font-black tracking-widest text-transparent">
             GRAND
           </div>
@@ -2627,8 +2648,13 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
                       {tier[1]}
                     </span>
                   ) : (
-                    <span className="grid h-9 w-9 place-items-center rounded-full btn-gold font-mono text-[10px] font-black text-base-900">
+                    <span className="relative grid h-9 w-9 place-items-center rounded-full btn-gold font-mono text-[10px] font-black text-base-900 ring-2 ring-amber-900/60">
                       {fmt(coinPay(v))}
+                      {stampOf(v) && (
+                        <span className="reel-pop absolute -right-1.5 -top-1.5 rounded-md bg-gradient-to-b from-red-500 to-red-800 px-1 text-[9px] font-black text-white ring-1 ring-red-300/70">
+                          ×{stampOf(v)}
+                        </span>
+                      )}
                     </span>
                   )
                 ) : (
@@ -2640,6 +2666,34 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
             );
           })}
         </div>
+        {intro && (
+          <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-xl bg-black/70 backdrop-blur-[2px]">
+            <div className="bigwin-pop text-center">
+              <div className="bg-gradient-to-b from-yellow-100 via-gold to-amber-600 bg-clip-text text-3xl font-black tracking-tight text-transparent drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] sm:text-4xl">
+                HOLD &amp; WIN
+              </div>
+              <div className="mt-1 text-sm font-bold text-slate-200">
+                Coins lock · {def.respins} respins · every new coin resets them
+              </div>
+            </div>
+          </div>
+        )}
+        {tally && (
+          <button onClick={() => setTally(null)}
+            className="absolute inset-0 z-30 grid cursor-pointer place-items-center rounded-xl bg-black/75 backdrop-blur-[2px]">
+            <span className="bigwin-pop text-center">
+              <span className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-300">
+                {tally.grand ? "FULL GRID — GRAND!" : "Feature complete"}
+              </span>
+              <span className="mt-1 block drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+                <CashMeter label="" value={tally.total} big />
+              </span>
+              <span className="mt-1 block text-xs font-bold text-slate-400">
+                {tally.coins} coins collected · tap to continue
+              </span>
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="mt-3 flex items-end gap-2">
