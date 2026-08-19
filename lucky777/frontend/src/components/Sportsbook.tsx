@@ -2,6 +2,33 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type SbBet, type SbEvent, type SbMarket, type SbQuote, type SbSelection } from "../api";
 import { useOddsFmt } from "../prefs";
 
+// -------------------------------------------------------- price-move flash --
+// Last seen price per selection, diffed on every board refresh. A moved price
+// pulses its cell -- green when the odds drift out (better for the bettor),
+// red when they shorten -- exactly like the screens at a real book.
+const PREV_ODDS = new Map<number, number>();
+const FLASH = new Map<number, "up" | "down">();
+const flashCls = (id: number) => {
+  const d = FLASH.get(id);
+  return d === "up" ? " odds-up" : d === "down" ? " odds-down" : "";
+};
+function markFlashes(evs: SbEvent[]) {
+  FLASH.clear();
+  for (const ev of evs) {
+    for (const m of ev.markets) {
+      for (const s of m.selections) {
+        const now = Number(s.odds);
+        const was = PREV_ODDS.get(s.id);
+        if (was !== undefined && Math.abs(now - was) > 1e-9) {
+          FLASH.set(s.id, now > was ? "up" : "down");
+        }
+        PREV_ODDS.set(s.id, now);
+      }
+    }
+  }
+  if (FLASH.size) setTimeout(() => FLASH.clear(), 1600);
+}
+
 export interface SlipLeg {
   selectionId: number;
   odds: string;
@@ -36,7 +63,11 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
 
   const loadEvents = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
-    try { setEvents(await api.sbEvents(undefined)); } finally { if (!quiet) setLoading(false); }
+    try {
+      const evs = await api.sbEvents(undefined);
+      markFlashes(evs);
+      setEvents(evs);
+    } finally { if (!quiet) setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -401,7 +432,8 @@ function OddsButton({ sel, active, onClick }: {
   return (
     <button onClick={onClick}
       className={`flex-1 rounded-lg px-2 py-2 text-left transition ${
-        active ? "btn-gold text-base-900" : "border border-white/5 bg-base-700/80 hover:border-gold/30 hover:bg-base-600"}`}>
+        active ? "btn-gold text-base-900" : "border border-white/5 bg-base-700/80 hover:border-gold/30 hover:bg-base-600"}${
+        active ? "" : flashCls(sel.id)}`}>
       <div className={`truncate text-[11px] ${active ? "text-base-900/70" : "text-slate-400"}`}>
         {sel.name}
       </div>
@@ -433,7 +465,8 @@ function LineCell({ sel, label, active, onClick }: {
   return (
     <button onClick={onClick}
       className={`flex h-11 w-full flex-col items-center justify-center rounded transition ${
-        active ? "btn-gold text-base-900" : "border border-white/5 bg-base-700/80 hover:border-gold/30 hover:bg-base-600"}`}>
+        active ? "btn-gold text-base-900" : "border border-white/5 bg-base-700/80 hover:border-gold/30 hover:bg-base-600"}${
+        active ? "" : flashCls(sel.id)}`}>
       {label && (
         <span className={`font-mono text-[10px] leading-tight ${
           active ? "text-base-900/70" : "text-slate-400"}`}>{label}</span>
@@ -1174,7 +1207,8 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
       <button onClick={() => onPick(ev, { name: m.name }, sel)}
         className={`flex h-10 w-full items-center justify-between rounded border px-3 text-xs transition ${
           on ? "btn-gold border-transparent text-base-900"
-            : "border-white/5 bg-base-700/60 hover:border-gold/40 hover:bg-base-600"}`}>
+            : "border-white/5 bg-base-700/60 hover:border-gold/40 hover:bg-base-600"}${
+          on ? "" : flashCls(sel.id)}`}>
         <span className={`flex min-w-0 items-center gap-1.5 ${on ? "text-base-900" : "text-slate-200"}`}>
           {main && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-base-900" : "bg-slate-400"}`} />}
           <span className={`truncate ${main ? "font-bold" : ""}`}>{label}</span>
@@ -1571,14 +1605,16 @@ function pickLabel(ev: SbEvent, m: SbMarket, sel: SbSelection): [string, string]
   return [`${sel.name} ${sel.american}`, m.name];
 }
 
-function PriceChip({ top, bottom, on, onClick }: {
+function PriceChip({ top, bottom, on, onClick, selId }: {
   top: string | null; bottom: string; on: boolean; onClick: () => void;
+  selId?: number;
 }) {
   return (
     <button onClick={onClick}
       className={`flex h-12 w-full flex-col items-center justify-center rounded-lg border text-[13px] leading-tight transition ${
         on ? "border-gold bg-gold text-base-900 shadow-gold"
-          : "border-slate-300 bg-white text-slate-900 hover:border-gold/70 hover:bg-amber-50"}`}>
+          : "border-slate-300 bg-white text-slate-900 hover:border-gold/70 hover:bg-amber-50"}${
+        on || selId === undefined ? "" : flashCls(selId)}`}>
       {top && <span className={`font-semibold ${on ? "text-base-900/80" : "text-slate-700"}`}>{top}</span>}
       <span className={`font-mono font-bold ${on ? "" : "text-emerald-700"}`}>{bottom}</span>
     </button>
@@ -1633,7 +1669,7 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
   };
   const chip = (pk: ClassicPick | null, top: string | null, bottom?: string) =>
     pk ? (
-      <PriceChip top={top} bottom={bottom ?? pk.sel.american}
+      <PriceChip top={top} bottom={bottom ?? pk.sel.american} selId={pk.sel.id}
         on={picks.has(pk.sel.id)} onClick={() => onToggle(pk)} />
     ) : <div className="h-12 rounded-lg border border-dashed border-slate-200" />;
 
@@ -1725,7 +1761,7 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
                       const pk = mk(ev, m, x.key);
                       return pk ? (
                         <PriceChip key={x.id} top={x.name} bottom={x.american}
-                          on={picks.has(x.id)} onClick={() => onToggle(pk)} />
+                          selId={x.id} on={picks.has(x.id)} onClick={() => onToggle(pk)} />
                       ) : null;
                     })}
                   </div>

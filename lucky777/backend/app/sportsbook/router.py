@@ -227,6 +227,122 @@ async def my_bets(limit: int = 40, user: User = Depends(current_user),
     return out
 
 
+# -------------------------------------------------------------- cash out ----
+# The book's cut on an early close. A cash-out is priced at fair value off the
+# CURRENT market, then shaded -- exactly how the real ones do it. The number
+# itself is never surfaced to the player, only the offer.
+CASHOUT_MARGIN = Decimal("0.94")
+
+
+async def _cashout_quote(session: AsyncSession, bet: Bet) -> int | None:
+    """What the book will pay right now to take this ticket back, in micros.
+
+    fair value = stake x (struck odds of legs already WON)
+                       x (struck/current for legs still RUNNING)
+    A lost leg kills the offer; a void leg contributes 1. Every running leg
+    must have a live, open price to close against -- a suspended market means
+    no quote (the book won't buy what it can't price).
+    """
+    if bet.status != "open" or bet.is_free_play:
+        return None
+    if bet.type not in ("single", "parlay"):
+        return None                     # exotics keep their own chain math
+    legs = (await session.execute(
+        select(BetSelection, Selection, Market)
+        .join(Selection, Selection.id == BetSelection.selection_id)
+        .join(Market, Market.id == Selection.market_id)
+        .where(BetSelection.bet_id == bet.id))).all()
+    if not legs:
+        return None
+    factor = Decimal(1)
+    running = 0
+    for bs, sel, mk in legs:
+        res = bs.result or sel.result
+        struck = Decimal(bs.odds_at_placement)
+        if res in ("won", "half_won"):
+            factor *= struck
+        elif res in ("void", "push"):
+            continue
+        elif res in ("lost", "half_lost"):
+            return None                 # dead ticket -- nothing to buy back
+        else:
+            if mk.status != "open" or sel.status != "open":
+                return None
+            try:
+                cur = Decimal(sel.odds_decimal)
+            except InvalidOperation:
+                return None
+            if cur <= 1:
+                return None
+            factor *= struck / cur
+            running += 1
+    if running == 0:
+        return None                     # fully decided: settlement pays this
+    offer = payout_micros(bet.stake_micros, factor * CASHOUT_MARGIN)
+    offer = min(offer, bet.potential_micros)
+    return offer if offer > 0 else None
+
+
+@router.get("/bets/cashouts")
+async def cashout_quotes(user: User = Depends(current_user),
+                         session: AsyncSession = Depends(get_session)):
+    """Live buy-back offers on every open ticket, keyed by bet id."""
+    bets = (await session.execute(
+        select(Bet).where(Bet.user_id == user.id, Bet.status == "open")
+        .order_by(desc(Bet.id)).limit(200))).scalars().all()
+    out: dict[str, str] = {}
+    for b in bets:
+        q = await _cashout_quote(session, b)
+        if q is not None:
+            out[str(b.id)] = str(from_micros(q))
+    await session.commit()
+    return out
+
+
+class CashoutRequest(BaseModel):
+    # the offer the player saw; if the live quote has slipped below it, the
+    # execute bounces with the fresh number instead of silently underpaying
+    min_accept: str | None = None
+
+
+@router.post("/bets/{bet_id}/cashout")
+async def cashout(bet_id: int, req: CashoutRequest,
+                  user: User = Depends(betting_user),
+                  session: AsyncSession = Depends(get_session)):
+    bet = await session.get(Bet, bet_id)
+    if bet is None or bet.user_id != user.id:
+        raise HTTPException(404, "no such wager")
+    if bet.status != "open":
+        raise HTTPException(409, "that ticket has already settled")
+    offer = await _cashout_quote(session, bet)
+    if offer is None:
+        raise HTTPException(409, "cash out isn't available on this ticket right now")
+    if req.min_accept:
+        try:
+            floor = to_micros(Decimal(req.min_accept))
+        except InvalidOperation:
+            raise HTTPException(400, "min_accept is not a number")
+        if offer < floor:
+            raise HTTPException(409, {"reason": "offer_changed",
+                                      "offer": str(from_micros(offer))})
+
+    bet.status = "buyout"
+    bet.payout_micros = offer
+    bet.settled_at = datetime.now(timezone.utc)
+    house = await ledger.house_account(session)
+    wallet = await ledger.wallet_for(session, bet.user_id)
+    # same idempotency key as settlement: whichever path pays first, wins once
+    await ledger.transfer(
+        session, idempotency_key=f"sb:{bet.id}:settle", kind="bet_cashout",
+        src=house.id, dst=wallet.id, amount_micros=offer,
+        ref_type="sports_bet", ref_id=bet.id)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return {"bet_id": bet.id, "status": "buyout",
+            "paid": str(from_micros(offer)),
+            "balance": str(from_micros(balance))}
+
+
 class QuoteRequest(BaseModel):
     selection_ids: list[int]
     stake: str = "10"

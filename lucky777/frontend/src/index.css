@@ -306,6 +306,25 @@
     animation: vs-glowpulse 0.9s ease-in-out infinite;
   }
 
+  /* live price moves: the cell pulses green when the odds drift out, red
+     when they shorten, then fades back -- the big-board effect */
+  @keyframes odds-up {
+    0% { background-color: rgba(52, 211, 153, 0.42);
+         box-shadow: 0 0 12px -2px rgba(52, 211, 153, 0.6); }
+    100% { background-color: transparent; box-shadow: none; }
+  }
+  .odds-up {
+    animation: odds-up 1.4s ease-out;
+  }
+  @keyframes odds-down {
+    0% { background-color: rgba(248, 113, 113, 0.42);
+         box-shadow: 0 0 12px -2px rgba(248, 113, 113, 0.6); }
+    100% { background-color: transparent; box-shadow: none; }
+  }
+  .odds-down {
+    animation: odds-down 1.4s ease-out;
+  }
+
   /* .font-mono here means "numbers that must line up" -- tabular figures */
   .font-mono {
     font-feature-settings: "tnum" 1, "cv05" 1;

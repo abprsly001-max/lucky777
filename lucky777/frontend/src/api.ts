@@ -695,6 +695,11 @@ export const api = {
         body: JSON.stringify({ legs, stake, accept_changes, type,
           teaser_tier: teaser_tier ?? null, free_play }) }),
   sbMyBets: () => request<SbBet[]>("/api/sportsbook/bets"),
+  sbCashouts: () => request<Record<string, string>>("/api/sportsbook/bets/cashouts"),
+  sbCashout: (betId: number, minAccept?: string) =>
+    request<{ bet_id: number; status: string; paid: string; balance: string }>(
+      `/api/sportsbook/bets/${betId}/cashout`, { method: "POST",
+        body: JSON.stringify({ min_accept: minAccept ?? null }) }),
   sbSync: () => request<{ provider: string; events: number }>("/api/sportsbook/sync", { method: "POST" }),
   sbDrift: () =>
     request<{ prices_moved: number; lines_moved: number }>("/api/sportsbook/drift", { method: "POST" }),

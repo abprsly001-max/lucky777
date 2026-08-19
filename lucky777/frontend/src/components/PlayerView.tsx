@@ -145,7 +145,7 @@ export default function PlayerView({ onBalance, username }: {
       {tab === "board" && <Sportsbook onBalance={balanced} isAdmin={false}
         onCasino={() => setTab("casino")} onHorses={() => setTab("horses")} />}
       {tab === "casino" && <Casino onBalance={balanced} />}
-      {tab === "wagers" && <MyWagers />}
+      {tab === "wagers" && <MyWagers onBalance={balanced} />}
       {tab === "figures" && <MyFigures />}
       {tab === "rules" && <Rules />}
       {tab === "transactions" && <MyTransactions />}
@@ -4391,11 +4391,49 @@ function WheelGame({ onBalance, onPlayed }: {
 }
 
 // --------------------------------------------------------------- my wagers --
-function MyWagers({ initial = "open" }: { initial?: "open" | "graded" | "all" }) {
+function MyWagers({ initial = "open", onBalance }: {
+  initial?: "open" | "graded" | "all"; onBalance?: (b: string) => void;
+}) {
   const [bets, setBets] = useState<SbBet[] | null>(null);
   const [filter, setFilter] = useState<"open" | "graded" | "all">(initial);
+  const [offers, setOffers] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [note, setNote] = useState("");
 
-  useEffect(() => { api.sbMyBets().then(setBets).catch(() => setBets([])); }, []);
+  const reload = () => {
+    api.sbMyBets().then(setBets).catch(() => setBets([]));
+    api.sbCashouts().then(setOffers).catch(() => {});
+  };
+  useEffect(() => {
+    reload();
+    // the buy-back price rides the live market: keep it fresh
+    const t = setInterval(() => { api.sbCashouts().then(setOffers).catch(() => {}); }, 10000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function cashOut(b: SbBet) {
+    if (busy) return;
+    setBusy(b.bet_id); setNote("");
+    try {
+      const r = await api.sbCashout(b.bet_id, offers[String(b.bet_id)]);
+      sfx.cashout();
+      setNote(`Ticket #${b.bet_id} cashed out for ${money(r.paid)}`);
+      onBalance?.(r.balance);
+      reload();
+    } catch (e: any) {
+      let handled = false;
+      try {
+        const d = JSON.parse(e.message);
+        if (d?.reason === "offer_changed") {
+          setNote(`Offer moved — now ${money(d.offer)}. Tap again to take it.`);
+          setOffers((p) => ({ ...p, [String(b.bet_id)]: d.offer }));
+          handled = true;
+        }
+      } catch { /* plain-text error */ }
+      if (!handled) { setNote(e.message || "cash out failed"); reload(); }
+    } finally { setBusy(null); }
+  }
 
   if (!bets) return <Card><p className="py-8 text-center text-sm text-slate-500">loading…</p></Card>;
 
@@ -4430,6 +4468,12 @@ function MyWagers({ initial = "open" }: { initial?: "open" | "graded" | "all" })
           </span>
         )}
       </div>
+
+      {note && (
+        <div className="rounded-lg border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-gold">
+          {note}
+        </div>
+      )}
 
       {shown.length === 0 ? (
         <Card><p className="py-8 text-center text-sm text-slate-500">
@@ -4475,6 +4519,13 @@ function MyWagers({ initial = "open" }: { initial?: "open" | "graded" | "all" })
               </div>
             ))}
           </div>
+          {b.status === "open" && offers[String(b.bet_id)] && (
+            <button onClick={() => cashOut(b)} disabled={busy === b.bet_id}
+              className="btn-gold mt-2.5 w-full rounded-lg py-2 text-xs font-bold text-base-900 disabled:opacity-50">
+              {busy === b.bet_id ? "Cashing out…"
+                : <>Cash Out <span className="font-mono">{money(offers[String(b.bet_id)])}</span></>}
+            </button>
+          )}
         </Card>
       ))}
     </div>
