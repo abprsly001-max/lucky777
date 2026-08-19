@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import { sfx } from "../sfx";
 import Duel from "./Duel";
-import GameArt, { GameLogo, SYMBOL_GLYPH } from "./GameArt";
+import GameArt, { GameLogo, SYMBOL_GLYPH, SymbolFace } from "./GameArt";
 import Sportsbook from "./Sportsbook";
 
 type Tab = "board" | "casino" | "wagers" | "figures" | "rules"
@@ -636,20 +636,9 @@ const LOBBY_NEW = new Set(["keno", "limbo", "towers", "dragontiger", "hilo",
 // ----------------------------------------------------------------- slots ----
 function SlotSymbol({ sym, size = "text-4xl" }: { sym: string; size?: string }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
-  if (spec.cls === "slot-bar") {
-    return (
-      <span className="rounded-md btn-gold px-2 py-0.5 font-sans text-sm font-black tracking-tight text-base-900">
-        BAR
-      </span>
-    );
-  }
-  if (spec.cls === "slot-gold") {
-    return (
-      <span className={`${size} font-black bg-gradient-to-b from-gold-400 to-gold-600 bg-clip-text text-transparent`}>
-        {spec.g}
-      </span>
-    );
-  }
+  // drawn vector faces first: royals, sevens, bells, fruit like a real machine
+  const face = SymbolFace({ sym });
+  if (face) return <span className="grid h-12 w-12 place-items-center sm:h-14 sm:w-14">{face}</span>;
   if (spec.cls === "slot-blank") {
     return <span className={`${size} text-slate-600`}>—</span>;
   }
@@ -2705,15 +2694,12 @@ function VSCell({ sym, hot, dim, tier }: {
   sym: string; hot: boolean; dim: boolean; tier: number;
 }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
-  const inner = spec.cls === "slot-bar" ? (
-    <span className="rounded btn-gold px-1.5 py-0.5 font-sans text-[11px] font-black text-base-900">BAR</span>
-  ) : sym === "wild" ? (
-    <span className="rounded-md bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1.5 py-1 font-sans text-[11px] font-black tracking-tight text-base-900 shadow-[0_2px_6px_rgba(0,0,0,0.5)] ring-1 ring-yellow-100/60">WILD</span>
-  ) : spec.cls === "slot-gold" ? (
-    <span className="bg-gradient-to-b from-white via-slate-200 to-slate-500 bg-clip-text text-2xl font-black text-transparent drop-shadow-[0_2px_2px_rgba(0,0,0,0.6)] sm:text-3xl">{spec.g}</span>
-  ) : (
+  // drawn vector faces first — royals, gems, bells, fruit read like a real
+  // machine; only symbols without a drawing fall back to their glyph
+  const face = SymbolFace({ sym });
+  const inner = face ?? (
     <span className={`drop-shadow-[0_3px_3px_rgba(0,0,0,0.55)] ${sym === "scatter"
-      ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(240,180,41,0.95))]"
+      ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(196,165,255,0.95))]"
       : "text-2xl sm:text-3xl"}`}>{spec.g}</span>
   );
   // symbol plates by rarity: premiums glow warm, mids cool, royals stay quiet
@@ -2824,6 +2810,19 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   const [bonusTotal, setBonusTotal] = useState("0");
   const [banner, setBanner] = useState<string | null>(null);
   const [showPays, setShowPays] = useState(false);
+  // the machine deck: turbo, autoplay, scatter anticipation, win presentation
+  const [turbo, setTurbo] = useState(false);
+  const [auto, setAuto] = useState(0);
+  const [autoMenu, setAutoMenu] = useState(false);
+  const [anticipate, setAnticipate] = useState(false);
+  const [bigWin, setBigWin] = useState<{ amount: string; tier: string } | null>(null);
+  const autoRef = useRef(0);
+  useEffect(() => { autoRef.current = auto; }, [auto]);
+  const turboRef = useRef(false);
+  useEffect(() => { turboRef.current = turbo; }, [turbo]);
+  const spinRef = useRef<() => void>(() => {});
+  const aliveRef = useRef(true);
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
 
   useEffect(() => {
     api.vslotActive().then((r) => {
@@ -2859,14 +2858,25 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   }
 
   async function doSpin() {
+    if (!aliveRef.current) return;
     setErr(""); setBusy(true); setWins([]); setLastWin(null); setBanner(null);
+    setBigWin(null); setAnticipate(false);
     setStopped([false, false, false, false, false]);
     setLive([true, true, true, true, true]);
     sfx.spin();
     try {
       const wasFree = freeLeft > 0;
       const r = await api.vslotSpin(vs.machine, stake);
+      const fast = turboRef.current;
+      const base = fast ? 160 : 550;
+      const step = fast ? 90 : 300;
+      // two scatters in the first four reels: the last reel sweats
+      const early = r.grid.slice(0, 4).flat()
+        .filter((s: string) => s === "scatter").length;
+      const sweat = !fast && early >= vs.free_spins.trigger - 1;
+      const extra = sweat ? 1200 : 0;
       [0, 1, 2, 3, 4].forEach((i) => window.setTimeout(() => {
+        if (!aliveRef.current) return;
         setGrid((g) => {
           const n = g.map((col) => [...col]);
           n[i] = r.grid[i];
@@ -2875,26 +2885,53 @@ function VideoSlot({ def, onBalance, onPlayed }: {
         setLive((l) => { const n = [...l]; n[i] = false; return n; });
         setStopped((s) => { const n = [...s]; n[i] = true; return n; });
         sfx.land();
+        if (i === 3 && sweat) { setAnticipate(true); sfx.tick(); }
         if (i === 4) {
+          setAnticipate(false);
           setWins(r.line_wins);
-          if (Number(r.win) > 0) { setLastWin(r.win); sfx.win(); }
           setFreeLeft(r.free_spins_left);
           setBonusTotal(r.bonus_total);
-          if (!wasFree && r.free_spins_left > 0) {
-            setBanner(`⭐ ${r.free_spins_left} FREE SPINS at ${vs.free_spins.mult}× ⭐`);
+          const gotBonus = !wasFree && r.free_spins_left > 0;
+          const winMult = Number(r.win) / Math.max(0.01, Number(stake));
+          if (Number(r.win) > 0) {
+            setLastWin(r.win);
+            if (winMult >= 15) {
+              setBigWin({ amount: r.win,
+                tier: winMult >= 100 ? "EPIC WIN" : winMult >= 40 ? "MEGA WIN" : "BIG WIN" });
+              sfx.bigwin();
+            } else { sfx.win(); }
+          }
+          if (gotBonus) {
+            setBanner(`${r.free_spins_left} FREE SPINS — all wins ${vs.free_spins.mult}×`);
+            setAuto(0);                       // bonus pauses autoplay
           } else if (wasFree && r.free_spins_left === 0) {
-            setBanner(`Bonus over — total ${money(r.bonus_total)}`);
+            setBanner(`Bonus complete — ${money(r.bonus_total)}`);
           }
           onBalance(r.balance);
           onPlayed();
           setBusy(false);
+          // the machine keeps itself running, exactly like the floor:
+          // free spins chain on their own, autoplay burns its count down
+          const bigPause = winMult >= 15 ? 2400 : 0;
+          if (r.free_spins_left > 0) {
+            window.setTimeout(() => {
+              if (aliveRef.current) spinRef.current();
+            }, (fast ? 550 : 1000) + bigPause);
+          } else if (autoRef.current > 0 && !gotBonus) {
+            setAuto((a) => Math.max(0, a - 1));
+            window.setTimeout(() => {
+              if (aliveRef.current && autoRef.current > 0) spinRef.current();
+            }, (fast ? 350 : 800) + bigPause);
+          }
         }
-      }, 550 + i * 300));
+      }, base + i * step + (i === 4 ? extra : 0)));
     } catch (e: any) {
       setLive([false, false, false, false, false]);
+      setAuto(0);
       setErr(e.message); setBusy(false);
     }
   }
+  spinRef.current = doSpin;
 
   const hotCells = new Set<string>();
   if (hotLine !== null) {
@@ -2926,42 +2963,98 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className={`rounded-xl border bg-gradient-to-b p-3 ${
+        <div className={`relative rounded-xl border bg-gradient-to-b p-3 ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
           {/* the reel bank, behind glass */}
           <div className="relative rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (
-                <VSReel key={reel} reel={reel} col={col} spinning={live[reel]}
-                  justStopped={stopped[reel]} symbols={vs.symbols}
-                  hotCells={hotCells} hotLine={hotLine} />
+                <div key={reel}
+                  className={reel === 4 && anticipate ? "vs-hot rounded-lg" : undefined}>
+                  <VSReel reel={reel} col={col} spinning={live[reel]}
+                    justStopped={stopped[reel]} symbols={vs.symbols}
+                    hotCells={hotCells} hotLine={hotLine} />
+                </div>
               ))}
             </div>
           </div>
           <div className="mt-2 flex h-6 items-center justify-center text-sm font-bold">
             {busy ? <span className="text-slate-500">…</span>
-              : lastWin ? <span className="text-accent">WIN {money(lastWin)}{freeLeft > 0 ? ` · ${vs.free_spins.mult}× bonus` : ""}</span>
-              : wins.length === 0 && <span className="text-[11px] font-medium text-slate-600">20 lines · {vs.free_spins.trigger}+ ⭐ = {vs.free_spins.count} free spins</span>}
+              : lastWin ? <CashMeter label="WIN" value={lastWin} big />
+              : wins.length === 0 && <span className="text-[11px] font-medium text-slate-600">20 lines · {vs.free_spins.trigger}+ scatters = {vs.free_spins.count} free spins</span>}
           </div>
+          {bigWin && (
+            <BigWinOverlay amount={bigWin.amount} tier={bigWin.tier}
+              onDone={() => setBigWin(null)} />
+          )}
         </div>
 
-        <div className="mt-3 flex items-end gap-2">
-          <label className="text-xs">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Bet</span>
-            <input value={stake} onChange={(e) => setStake(e.target.value)}
+        {/* the machine deck: bet stepper · win meter · turbo · auto · spin */}
+        <div className="mt-3 flex items-stretch gap-2">
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-base-900/70 px-2 py-1.5">
+            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, -1)))}
               disabled={busy || freeLeft > 0}
-              className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none disabled:opacity-50" />
-          </label>
+              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">−</button>
+            <div className="w-16 text-center">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</div>
+              <div className="font-mono text-sm font-bold text-slate-100">{money(Number(stake) || 0)}</div>
+            </div>
+            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, 1)))}
+              disabled={busy || freeLeft > 0}
+              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">+</button>
+          </div>
+
           {freeLeft === 0 && (vs as any).buy_cost && (
             <button onClick={buyBonus} disabled={busy}
-              className="rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/15 px-3 py-2.5 text-[11px] font-black uppercase leading-tight tracking-wide text-fuchsia-300 hover:bg-fuchsia-500/25 disabled:opacity-50">
-              Buy Bonus<br /><span className="font-mono">{(vs as any).buy_cost}× bet</span>
+              className="rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/15 px-2.5 text-[10px] font-black uppercase leading-tight tracking-wide text-fuchsia-300 hover:bg-fuchsia-500/25 disabled:opacity-50">
+              Buy<br />Bonus<br /><span className="font-mono">{(vs as any).buy_cost}×</span>
             </button>
           )}
+
+          <button onClick={() => setTurbo(!turbo)}
+            className={`rounded-xl border px-3 text-lg transition ${
+              turbo ? "border-gold bg-gold/20 text-gold shadow-gold"
+                : "border-white/10 bg-base-900/70 text-slate-500 hover:text-slate-300"}`}
+            title="Turbo — instant reel stops">⚡</button>
+
+          <div className="relative">
+            {auto > 0 ? (
+              <button onClick={() => setAuto(0)}
+                className="h-full rounded-xl border border-red-400/50 bg-red-500/15 px-3 text-[10px] font-black uppercase leading-tight text-red-300 hover:bg-red-500/25">
+                Stop<br /><span className="font-mono text-xs">{auto}</span>
+              </button>
+            ) : (
+              <button onClick={() => setAutoMenu(!autoMenu)} disabled={busy || freeLeft > 0}
+                className="h-full rounded-xl border border-white/10 bg-base-900/70 px-3 text-[10px] font-black uppercase text-slate-400 hover:text-slate-200 disabled:opacity-40">
+                Auto
+              </button>
+            )}
+            {autoMenu && auto === 0 && (
+              <div className="absolute bottom-full left-0 z-20 mb-1 flex gap-1 rounded-xl border border-white/10 bg-base-800 p-1 shadow-pop">
+                {[10, 25, 50, 100].map((n) => (
+                  <button key={n}
+                    onClick={() => { setAutoMenu(false); setAuto(n - 1); doSpin(); }}
+                    className="rounded-lg bg-base-700 px-2.5 py-1.5 font-mono text-xs font-bold text-slate-200 hover:btn-gold hover:text-base-900">
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button onClick={doSpin} disabled={busy}
-            className="ml-auto rounded-lg btn-gold px-8 py-2.5 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
-            {freeLeft > 0 ? `Free Spin (${freeLeft})` : "Spin"}
+            className="btn-gold ml-auto grid h-16 w-16 shrink-0 place-items-center self-center rounded-full text-base-900 disabled:opacity-50"
+            title={freeLeft > 0 ? `Free spins: ${freeLeft} left` : "Spin"}>
+            {freeLeft > 0 ? (
+              <span className="text-sm font-black">{freeLeft}</span>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none"
+                stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                <path d="M20 3v4h-4" />
+              </svg>
+            )}
           </button>
         </div>
         {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
@@ -2995,8 +3088,87 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   );
 }
 
+// the classic denomination ladder every floor machine steps through
+const BET_LADDER = [0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
+
+function stepBet(cur: number, dir: 1 | -1): number {
+  if (dir === 1) return BET_LADDER.find((v) => v > cur) ?? BET_LADDER[BET_LADDER.length - 1];
+  return [...BET_LADDER].reverse().find((v) => v < cur) ?? BET_LADDER[0];
+}
+
+/** number that rolls up to its target like a win meter */
+function useCountUp(value: number, ms = 900): number {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (value <= 0) { setV(0); return; }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const f = Math.min(1, (t - t0) / ms);
+      setV(value * (1 - Math.pow(1 - f, 3)));
+      if (f < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return v;
+}
+
+function CashMeter({ label, value, big = false }: {
+  label: string; value: string; big?: boolean;
+}) {
+  const v = useCountUp(Number(value), big ? 900 : 500);
+  return (
+    <span className={`font-mono font-black tracking-tight text-accent ${
+      big ? "text-base" : "text-xs"}`}>
+      {label} {money(v)}
+    </span>
+  );
+}
+
+/** the floor moment: BIG/MEGA/EPIC WIN over the reels, cash rolling up,
+    gold raining — click anywhere to skip */
+function BigWinOverlay({ amount, tier, onDone }: {
+  amount: string; tier: string; onDone: () => void;
+}) {
+  const v = useCountUp(Number(amount), 1600);
+  useEffect(() => {
+    const t = window.setTimeout(onDone, 3200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const coins = useMemo(() =>
+    Array.from({ length: 22 }, (_, i) => ({
+      left: (i * 37 + 11) % 100,
+      delay: ((i * 53) % 140) / 100,
+      dur: 1.5 + ((i * 29) % 90) / 100,
+      size: 10 + ((i * 17) % 12),
+    })), []);
+  return (
+    <button onClick={onDone}
+      className="absolute inset-0 z-30 grid cursor-pointer place-items-center overflow-hidden rounded-xl bg-black/70 backdrop-blur-[2px]">
+      {coins.map((c, i) => (
+        <span key={i} className="coin-rain absolute top-[-24px] rounded-full bg-gradient-to-b from-yellow-200 via-gold to-amber-700 ring-1 ring-yellow-100/70"
+          style={{ left: `${c.left}%`, width: c.size, height: c.size,
+                   animationDelay: `${c.delay}s`, animationDuration: `${c.dur}s` }} />
+      ))}
+      <span className="bigwin-pop text-center">
+        <span className={`block bg-gradient-to-b from-yellow-100 via-gold to-amber-600 bg-clip-text text-4xl font-black tracking-tight text-transparent drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] ${
+          tier === "EPIC WIN" ? "sm:text-6xl" : "sm:text-5xl"}`}>
+          {tier}
+        </span>
+        <span className="mt-1 block font-mono text-2xl font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] sm:text-3xl">
+          {money(v)}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function VSCellMini({ sym }: { sym: string }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
+  const face = SymbolFace({ sym });
+  if (face) return <span className="grid h-7 w-7 place-items-center">{face}</span>;
   if (sym === "wild") return <span className="rounded btn-gold px-1.5 text-[10px] font-black text-base-900">WILD</span>;
   if (spec.cls === "slot-bar") return <span className="rounded btn-gold px-1.5 text-[10px] font-black text-base-900">BAR</span>;
   if (spec.cls === "slot-gold") return <span className="text-base font-black text-gold">{spec.g}</span>;

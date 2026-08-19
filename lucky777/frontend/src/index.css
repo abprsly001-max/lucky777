@@ -325,6 +325,26 @@
     animation: odds-down 1.4s ease-out;
   }
 
+  /* the floor moment: gold raining behind a BIG WIN banner */
+  @keyframes coin-rain {
+    0% { transform: translateY(-30px) rotate(0deg); opacity: 0; }
+    10% { opacity: 1; }
+    100% { transform: translateY(420px) rotate(340deg); opacity: 0.9; }
+  }
+  .coin-rain {
+    animation-name: coin-rain;
+    animation-timing-function: cubic-bezier(0.3, 0.1, 0.7, 1);
+    animation-iteration-count: infinite;
+  }
+  @keyframes bigwin-pop {
+    0% { transform: scale(0.3); opacity: 0; }
+    55% { transform: scale(1.12); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .bigwin-pop {
+    animation: bigwin-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
   /* .font-mono here means "numbers that must line up" -- tabular figures */
   .font-mono {
     font-feature-settings: "tnum" 1, "cv05" 1;

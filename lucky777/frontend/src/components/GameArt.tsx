@@ -46,6 +46,227 @@ export const SYMBOL_GLYPH: Record<string, { g: string; cls?: string }> = {
   J: { g: "J", cls: "slot-gold" },
 };
 
+/* ------------------------------------------------------------------------ *
+ * SymbolFace: drawn vector slot symbols — beveled royals, faceted gems,
+ * classic bells and sevens — so the reels read like a real machine instead
+ * of a row of emoji. Anything without a bespoke drawing falls back to its
+ * glyph inside the premium plate.
+ * ------------------------------------------------------------------------ */
+const ROYAL_COLORS: Record<string, [string, string]> = {
+  A: ["#ff8a8a", "#b91c1c"], K: ["#d8b4fe", "#7c3aed"],
+  Q: ["#93c5fd", "#1d4ed8"], J: ["#86efac", "#15803d"],
+  seven: ["#ffe08a", "#d99e12"], horseshoe: ["#ffe08a", "#b45309"],
+};
+
+function RoyalFace({ ch, from, to }: { ch: string; from: string; to: string }) {
+  const gid = `roy-${ch}-${from.slice(1)}`;
+  return (
+    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} />
+        </linearGradient>
+      </defs>
+      <text x="24" y="37" textAnchor="middle" fontSize="34" fontWeight="900"
+        fontFamily="Arial Black, Inter, sans-serif" fill="#000" opacity="0.55"
+        transform="translate(2,2.5)">{ch}</text>
+      <text x="24" y="37" textAnchor="middle" fontSize="34" fontWeight="900"
+        fontFamily="Arial Black, Inter, sans-serif" fill={`url(#${gid})`}
+        stroke="rgba(255,255,255,0.55)" strokeWidth="0.8">{ch}</text>
+    </svg>
+  );
+}
+
+function GemFace({ from, mid, to }: { from: string; mid: string; to: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+      <polygon points="24,4 40,16 24,44 8,16" fill={to} />
+      <polygon points="24,4 40,16 24,22" fill={mid} />
+      <polygon points="24,4 8,16 24,22" fill={from} />
+      <polygon points="8,16 24,22 24,44" fill={mid} opacity="0.85" />
+      <polygon points="40,16 24,22 24,44" fill={to} opacity="0.9" />
+      <polygon points="24,4 40,16 24,44 8,16" fill="none"
+        stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
+      <circle cx="18" cy="12" r="2.2" fill="#fff" opacity="0.85" />
+    </svg>
+  );
+}
+
+function BellFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <defs>
+        <linearGradient id="bellg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#c47f0e" />
+        </linearGradient>
+      </defs>
+      <path d="M24 6c1.8 0 3 1.2 3 3v1.4C33 12 37 17.4 37 24v6l4 5H7l4-5v-6
+        c0-6.6 4-12 10-13.6V9c0-1.8 1.2-3 3-3z" fill="url(#bellg)"
+        stroke="rgba(120,60,0,0.6)" strokeWidth="1" />
+      <circle cx="24" cy="39.5" r="3.4" fill="#8a5a00" />
+      <ellipse cx="19" cy="16" rx="3" ry="6" fill="#fff" opacity="0.35"
+        transform="rotate(-18 19 16)" />
+    </svg>
+  );
+}
+
+function CherryFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <path d="M17 25C20 14 27 8 38 7" fill="none" stroke="#2f8f3a" strokeWidth="3"
+        strokeLinecap="round" />
+      <path d="M30 26C30 17 33 11 38 7" fill="none" stroke="#2f8f3a" strokeWidth="3"
+        strokeLinecap="round" />
+      <path d="M36 8c3-1 5-1 7 1-2 2-5 2-7-1z" fill="#3aa845" />
+      <circle cx="15.5" cy="31" r="8.5" fill="#d81f3d" />
+      <circle cx="15.5" cy="31" r="8.5" fill="none" stroke="#7d0f22" strokeWidth="1" />
+      <circle cx="12.5" cy="28" r="2.6" fill="#ff8fa3" opacity="0.9" />
+      <circle cx="31" cy="33.5" r="8" fill="#e63253" />
+      <circle cx="31" cy="33.5" r="8" fill="none" stroke="#7d0f22" strokeWidth="1" />
+      <circle cx="28" cy="30.5" r="2.4" fill="#ff9fb0" opacity="0.9" />
+    </svg>
+  );
+}
+
+function StarFace({ glow = false }: { glow?: boolean }) {
+  return (
+    <svg viewBox="0 0 48 48"
+      className={`h-[80%] w-[80%] ${glow ? "[filter:drop-shadow(0_0_9px_rgba(196,165,255,0.95))]" : ""}`}>
+      <defs>
+        <linearGradient id="starg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff3c4" /><stop offset="1" stopColor="#eab308" />
+        </linearGradient>
+      </defs>
+      <path d="M24 3l6.2 13.4L45 18.3 34.5 28.5l2.6 14.7L24 36.4 10.9 43.2
+        l2.6-14.7L3 18.3l14.8-1.9z" fill="url(#starg)"
+        stroke="rgba(120,70,0,0.55)" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M24 3l6.2 13.4L45 18.3l-9 8.7L24 12z" fill="#fff" opacity="0.28" />
+    </svg>
+  );
+}
+
+function CoinFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[74%] w-[74%]">
+      <circle cx="24" cy="24" r="19" fill="#d99e12" />
+      <circle cx="24" cy="24" r="19" fill="none" stroke="#8a5a00" strokeWidth="2" />
+      <circle cx="24" cy="24" r="13.5" fill="#f5c451" stroke="#b97b09" strokeWidth="1.4" />
+      <text x="24" y="30.5" textAnchor="middle" fontSize="17" fontWeight="900"
+        fontFamily="Arial Black, sans-serif" fill="#8a5a00">$</text>
+      <ellipse cx="17" cy="14" rx="6" ry="3" fill="#fff" opacity="0.4"
+        transform="rotate(-24 17 14)" />
+    </svg>
+  );
+}
+
+function CrownFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <defs>
+        <linearGradient id="crng" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#c47f0e" />
+        </linearGradient>
+      </defs>
+      <path d="M8 34l-3-18 10 7 9-13 9 13 10-7-3 18z" fill="url(#crng)"
+        stroke="rgba(120,60,0,0.6)" strokeWidth="1.2" strokeLinejoin="round" />
+      <rect x="8" y="35" width="32" height="5.5" rx="2" fill="url(#crng)"
+        stroke="rgba(120,60,0,0.6)" strokeWidth="1" />
+      <circle cx="24" cy="26" r="3" fill="#e63253" stroke="#7d0f22" />
+      <circle cx="13.5" cy="28" r="2" fill="#2563eb" stroke="#1e3a8a" />
+      <circle cx="34.5" cy="28" r="2" fill="#16a34a" stroke="#14532d" />
+    </svg>
+  );
+}
+
+function FruitFace({ kind }: { kind: string }) {
+  if (kind === "lemon" || kind === "orange") {
+    const c = kind === "lemon" ? ["#fde68a", "#eab308"] : ["#fdba74", "#ea580c"];
+    return (
+      <svg viewBox="0 0 48 48" className="h-[74%] w-[74%]">
+        <ellipse cx="24" cy="26" rx="16" ry="13.5" fill={c[1]} />
+        <ellipse cx="24" cy="26" rx="16" ry="13.5" fill="none"
+          stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
+        <ellipse cx="18" cy="20" rx="5.5" ry="3.4" fill={c[0]} opacity="0.75"
+          transform="rotate(-20 18 20)" />
+        <path d="M24 12c0-3 2-5 5-6" fill="none" stroke="#2f8f3a" strokeWidth="2.6"
+          strokeLinecap="round" />
+        <path d="M28 7c3-1 5 0 6 2-2 1.6-4.6 1-6-2z" fill="#3aa845" />
+      </svg>
+    );
+  }
+  if (kind === "grapes" || kind === "plum" || kind === "berry") {
+    const fill = kind === "berry" ? "#e63253" : "#7c3aed";
+    const pos = kind === "grapes"
+      ? [[17, 20], [24, 18], [31, 20], [20, 27], [28, 27], [24, 34]]
+      : [[24, 27]];
+    return (
+      <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+        <path d="M24 13c0-3.5 2-6 5-7" fill="none" stroke="#2f8f3a" strokeWidth="2.6"
+          strokeLinecap="round" />
+        <path d="M28 6c3-1 5 0 6 2-2 1.6-4.6 1-6-2z" fill="#3aa845" />
+        {pos.map(([x, y], i) => (
+          <g key={i}>
+            <circle cx={x} cy={y} r={kind === "grapes" ? 5.6 : 12} fill={fill} />
+            <circle cx={x} cy={y} r={kind === "grapes" ? 5.6 : 12} fill="none"
+              stroke="rgba(0,0,0,0.35)" strokeWidth="0.9" />
+            <circle cx={x - 2} cy={y - 2} r={kind === "grapes" ? 1.6 : 3.4}
+              fill="#fff" opacity="0.4" />
+          </g>
+        ))}
+      </svg>
+    );
+  }
+  if (kind === "melon") {
+    return (
+      <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+        <path d="M6 20a18 18 0 0 0 36 0z" fill="#16a34a" />
+        <path d="M9 20a15 15 0 0 0 30 0z" fill="#dcfce7" />
+        <path d="M11.5 20a12.5 12.5 0 0 0 25 0z" fill="#e63253" />
+        {[[18, 26], [24, 29], [30, 26]].map(([x, y], i) => (
+          <ellipse key={i} cx={x} cy={y} rx="1.3" ry="2" fill="#1c1917" />
+        ))}
+      </svg>
+    );
+  }
+  return null;
+}
+
+/** the drawn face for a symbol id, or null when only a glyph exists */
+export function SymbolFace({ sym, size = "" }: { sym: string; size?: string }) {
+  const wrap = (node: React.ReactNode) => (
+    <span className={`grid h-full w-full place-items-center ${size}`}>{node}</span>
+  );
+  if (sym === "wild") {
+    return wrap(
+      <span className="rounded-md bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1.5 py-1 font-sans text-[11px] font-black tracking-tight text-base-900 shadow-[0_2px_6px_rgba(0,0,0,0.5)] ring-1 ring-yellow-100/60">WILD</span>);
+  }
+  if (sym === "bar" || sym === "bar3") {
+    return wrap(
+      <span className="flex flex-col gap-[2px]">
+        {(sym === "bar3" ? [0, 1, 2] : [0]).map((i) => (
+          <span key={i} className="rounded bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1.5 text-[9px] font-black tracking-tight text-base-900 ring-1 ring-yellow-100/50">BAR</span>
+        ))}
+      </span>);
+  }
+  if (sym in ROYAL_COLORS) {
+    const [f, t] = ROYAL_COLORS[sym];
+    return wrap(<RoyalFace ch={sym === "seven" ? "7" : sym === "horseshoe" ? "U" : sym} from={f} to={t} />);
+  }
+  if (sym === "diamond") return wrap(<GemFace from="#e0f2fe" mid="#7dd3fc" to="#0284c7" />);
+  if (sym === "ring") return wrap(<GemFace from="#fce7f3" mid="#f9a8d4" to="#be185d" />);
+  if (sym === "potion") return wrap(<GemFace from="#dcfce7" mid="#4ade80" to="#15803d" />);
+  if (sym === "bell") return wrap(<BellFace />);
+  if (sym === "cherry") return wrap(<CherryFace />);
+  if (sym === "star") return wrap(<StarFace />);
+  if (sym === "scatter") return wrap(<StarFace glow />);
+  if (sym === "coin") return wrap(<CoinFace />);
+  if (sym === "crown") return wrap(<CrownFace />);
+  if (["lemon", "orange", "grapes", "plum", "berry", "melon"].includes(sym)) {
+    return wrap(<FruitFace kind={sym} />);
+  }
+  return null;
+}
+
 function Defs({ id, from, to }: { id: string; from: string; to: string }) {
   return (
     <defs>
