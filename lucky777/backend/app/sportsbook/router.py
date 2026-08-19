@@ -36,9 +36,24 @@ async def sports(session: AsyncSession = Depends(get_session)):
     return [{"key": s.key, "name": s.name, "icon": s.icon, "events": n} for s, n in rows]
 
 
+# the board barely changes between polls: serve a short-lived cached copy so
+# a thousand-game payload is built AND encoded once, not once per refresh
+_EVENTS_CACHE: dict[tuple, tuple[float, bytes]] = {}
+_EVENTS_TTL = 8.0
+
+
 @router.get("/events")
 async def events(sport: str | None = None, competition: str | None = None,
-                 limit: int = 400, session: AsyncSession = Depends(get_session)):
+                 limit: int = 400, props: int = 0,
+                 session: AsyncSession = Depends(get_session)):
+    import time as _time
+
+    from fastapi.responses import Response
+    ck = (sport, competition, min(limit, 2000), bool(props))
+    hit = _EVENTS_CACHE.get(ck)
+    if hit and _time.monotonic() - hit[0] < _EVENTS_TTL:
+        return Response(content=hit[1], media_type="application/json")
+
     q = (select(Event, Competition, Sport)
          .join(Competition, Competition.id == Event.competition_id)
          .join(Sport, Sport.id == Competition.sport_id)
@@ -51,6 +66,26 @@ async def events(sport: str | None = None, competition: str | None = None,
         q = q.where(Competition.key == competition)
     rows = (await session.execute(q)).all()
 
+    # three queries total, whatever the board size: events, markets, selections
+    ev_ids = [ev.id for ev, _, _ in rows]
+    mq = select(Market).where(Market.event_id.in_(ev_ids),
+                              Market.status == "open")
+    if not props:
+        mq = mq.where(~Market.type.like("prop:%"))
+    all_markets = (await session.execute(mq)).scalars().all() if ev_ids else []
+    m_by_event: dict[int, list[Market]] = {}
+    for m in all_markets:
+        m_by_event.setdefault(m.event_id, []).append(m)
+    m_ids = [m.id for m in all_markets]
+    s_by_market: dict[int, list[Selection]] = {}
+    # chunk the IN clause: SQLite tops out near 32k params
+    for i in range(0, len(m_ids), 5000):
+        chunk = (await session.execute(
+            select(Selection).where(Selection.market_id.in_(m_ids[i:i + 5000]))
+            .order_by(Selection.id))).scalars().all()
+        for s in chunk:
+            s_by_market.setdefault(s.market_id, []).append(s)
+
     import logging
     log = logging.getLogger("lucky777.board")
     out = []
@@ -58,16 +93,10 @@ async def events(sport: str | None = None, competition: str | None = None,
         # one malformed event must never blank the whole board: serialize each
         # game defensively, skip and log the ones that fail
         try:
-            markets = (await session.execute(
-                select(Market).where(Market.event_id == ev.id, Market.status == "open")
-            )).scalars().all()
             m_out = []
-            for m in markets:
+            for m in m_by_event.get(ev.id, []):
                 try:
-                    sels = (await session.execute(
-                        select(Selection).where(Selection.market_id == m.id)
-                        .order_by(Selection.id)
-                    )).scalars().all()
+                    sels = s_by_market.get(m.id, [])
                     prices = [s.odds_decimal for s in sels]
                     m_out.append({
                         "id": m.id, "type": m.type, "name": m.name, "line": m.line,
@@ -99,7 +128,9 @@ async def events(sport: str | None = None, competition: str | None = None,
             log.exception("skipping unserializable event %s (%s v %s)",
                           ev.id, ev.home, ev.away)
     await session.commit()
-    return out
+    body = json.dumps(out, separators=(",", ":")).encode()
+    _EVENTS_CACHE[ck] = (_time.monotonic(), body)
+    return Response(content=body, media_type="application/json")
 
 
 # --------------------------------------------------------------- betting ----

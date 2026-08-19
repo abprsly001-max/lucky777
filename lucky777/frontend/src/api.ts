@@ -681,8 +681,8 @@ export const api = {
       "/api/agent/game-admin"),
 
   sbSports: () => request<SbSport[]>("/api/sportsbook/sports"),
-  sbEvents: (sport?: string) =>
-    request<SbEvent[]>(`/api/sportsbook/events?limit=2000${sport ? `&sport=${sport}` : ""}`),
+  sbEvents: (sport?: string, props = false) =>
+    request<SbEvent[]>(`/api/sportsbook/events?limit=2000${sport ? `&sport=${sport}` : ""}${props ? "&props=1" : ""}`),
   sbQuote: (selection_ids: number[], stake: string, type = "auto", teaser_tier?: number) =>
     request<SbQuote>("/api/sportsbook/quote", {
       method: "POST", body: JSON.stringify({ selection_ids, stake, type,

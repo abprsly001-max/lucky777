@@ -1365,8 +1365,14 @@ function PropsBoard({ events, selected, onPick }: {
 }) {
   const [league, setLeague] = useState<string>("all");
   const [cat, setCat] = useState<string>("all");
+  // props are heavy, so the main board skips them — this view fetches its own
+  const [pev, setPev] = useState<SbEvent[] | null>(null);
+  useEffect(() => {
+    api.sbEvents(undefined, true).then(setPev).catch(() => setPev([]));
+  }, []);
+  const source = pev ?? events;
 
-  const withProps = events.filter((e) =>
+  const withProps = source.filter((e) =>
     e.status === "scheduled" && e.markets.some((m) => m.type.startsWith("prop:")));
 
   const leagues = useMemo(() => {
@@ -1377,7 +1383,7 @@ function PropsBoard({ events, selected, onPick }: {
       seen.set(e.competition_key, l);
     }
     return [...seen.entries()];
-  }, [events]);
+  }, [source]);
 
   const shown = withProps.filter((e) => league === "all" || e.competition_key === league);
 
@@ -1389,6 +1395,13 @@ function PropsBoard({ events, selected, onPick }: {
     return [...present];
   }, [shown]);
 
+  if (pev === null) {
+    return (
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-8 text-center text-sm text-slate-500">
+        loading props…
+      </div>
+    );
+  }
   if (withProps.length === 0) {
     return (
       <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-8 text-center text-sm text-slate-500">

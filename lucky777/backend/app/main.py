@@ -149,6 +149,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Lucky777", version="0.1.0", lifespan=lifespan)
 
+# a thousand-game board is ~1MB of JSON; on the wire it's ~100KB gzipped
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -169,7 +173,7 @@ app.include_router(sportsbook_router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "build": "2026-08-19-realism"}
+    return {"ok": True, "build": "2026-08-19-fast"}
 
 
 # serve the built frontend if it exists (single-command production mode)
