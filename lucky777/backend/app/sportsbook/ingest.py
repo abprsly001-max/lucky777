@@ -86,7 +86,7 @@ async def upsert_event(session: AsyncSession, pe: ProviderEvent) -> Event:
                 sel.name = ps.name
                 session.add(OddsHistory(selection_id=sel.id, odds_decimal=price))
 
-    if is_new:
+    if is_new and not pe.provider_id.startswith("outright:"):
         # every new game lands with per-side totals already on the board,
         # split off the game total by the moneyline lean
         from .live import TEAM_TOTAL_SPORTS, _build_team_totals
@@ -167,6 +167,20 @@ async def sync_live_odds(session: AsyncSession) -> dict:
     return {"live_repriced": repriced, "polled_sports": len(sport_keys)}
 
 
+async def sync_futures(session: AsyncSession) -> dict:
+    """Pull every outright the feed carries -- championship winners, MVP and
+    award races, division winners -- and keep their prices moving. Futures
+    never touch the live engine: no kickoff, no scores, no simulator."""
+    provider = get_provider()
+    if not hasattr(provider, "fetch_futures"):
+        return {"futures": 0}
+    events = await provider.fetch_futures()
+    for pe in events:
+        await upsert_event(session, pe)
+    await session.flush()
+    return {"futures": len(events)}
+
+
 PROPS_LEAGUES = ("baseball_mlb", "basketball_nba", "basketball_wnba",
                  "americanfootball_nfl", "americanfootball_ncaaf",
                  "icehockey_nhl")
@@ -244,7 +258,8 @@ async def sync_scores(session: AsyncSession, include_finals: bool = True) -> dic
         select(Competition.key)
         .join(Event, Event.competition_id == Competition.id)
         .where(or_(Event.status == "live",
-                   and_(Event.status == "scheduled", Event.starts_at <= now)))
+                   and_(Event.status == "scheduled", Event.starts_at <= now)),
+               ~Event.provider_id.like("outright:%"))
         .distinct())).scalars().all()
     if not keys:
         return {"went_live": 0, "updated": 0, "graded": 0, "polled_sports": 0}

@@ -120,10 +120,13 @@ async def _sport_key(session: AsyncSession, event: Event) -> str:
 async def go_live(session: AsyncSession, event_ids: list[int] | None = None,
                   count: int = 3) -> list[Event]:
     """Kick off games: scheduled -> live, 0-0, derivatives suspended."""
+    # futures never kick off: they have no clock, no score, no simulator
+    no_futures = ~Event.provider_id.like("outright:%")
     if event_ids:
-        q = select(Event).where(Event.id.in_(event_ids), Event.status == "scheduled")
+        q = select(Event).where(Event.id.in_(event_ids),
+                                Event.status == "scheduled", no_futures)
     else:
-        q = (select(Event).where(Event.status == "scheduled")
+        q = (select(Event).where(Event.status == "scheduled", no_futures)
              .order_by(Event.starts_at).limit(count))
     evs = (await session.execute(q)).scalars().all()
     for ev in evs:

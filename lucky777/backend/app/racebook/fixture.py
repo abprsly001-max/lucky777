@@ -19,7 +19,20 @@ TRACKS = [
     ("churchill", "Churchill Downs"),
     ("santaanita", "Santa Anita"),
     ("gulfstream", "Gulfstream Park"),
+    # the motor circuit: same card mechanics, drivers instead of horses.
+    # keys carry the motor_ prefix so the UI can badge them 🏎
+    ("motor_thunderbay", "Thunder Bay Speedway"),
+    ("motor_neondesert", "Neon Desert Motorplex"),
 ]
+
+# ---- the motor series roster (fictional circuit, like the esports league)
+DRIVER_FIRST = ["R.", "J.", "T.", "K.", "D.", "M.", "C.", "A.", "B.", "S.",
+                "L.", "V."]
+DRIVER_LAST = ["Callahan", "Vasquez", "Marlowe", "Steele", "Duquette", "Brandt",
+               "Okafor", "Reyes", "Kowalski", "Fontaine", "Nakamura", "Bishop",
+               "Traeger", "Slater", "Moreau", "Kessler", "Draper", "Ashford"]
+RACE_TEAMS = ["Apex Racing", "Redline Motorsport", "Vortex GP", "Ironclad",
+              "Solaris Speed", "Blackout Racing", "Monarch Motors", "Fury Labs"]
 
 ML_LADDER = ["1/2", "3/5", "4/5", "1/1", "6/5", "3/2", "8/5", "9/5", "2/1",
              "5/2", "3/1", "7/2", "4/1", "9/2", "5/1", "6/1", "8/1", "10/1",
@@ -44,17 +57,21 @@ def _seed(track_key: str, day: str, number: int) -> str:
     return f"rb:{track_key}:{day}:{number}"
 
 
-def _runners(rng: random.Random) -> list[dict]:
+def _runners(rng: random.Random, motor: bool = False) -> list[dict]:
     n = rng.randint(6, 9)
-    names = rng.sample([f"{a} {b}" for a in NAME_A for b in NAME_B], n)
+    if motor:
+        names = rng.sample([f"{a} {b}" for a in DRIVER_FIRST for b in DRIVER_LAST], n)
+    else:
+        names = rng.sample([f"{a} {b}" for a in NAME_A for b in NAME_B], n)
     out = []
     for i in range(n):
         out.append({
             "pn": i + 1,
             "name": names[i][:20],
-            "jockey": rng.choice(JOCKEYS),
+            "jockey": rng.choice(RACE_TEAMS) if motor else rng.choice(JOCKEYS),
             "ml": rng.choice(ML_LADDER),
-            "weight": f"L{rng.choice([118, 120, 122, 124, 126])}",
+            "weight": (f"#{rng.randint(2, 99)}" if motor
+                       else f"L{rng.choice([118, 120, 122, 124, 126])}"),
         })
     # every race gets one genuine favourite so the card reads right
     fav = rng.randrange(n)
@@ -90,7 +107,7 @@ async def ensure_card(session: AsyncSession, days_ahead: int = 1) -> int:
                             post_time=first + timedelta(minutes=MINUTES_BETWEEN * i))
                 session.add(race)
                 await session.flush()
-                for r in _runners(rng):
+                for r in _runners(rng, motor=key.startswith("motor_")):
                     session.add(Runner(race_id=race.id, **r))
                 created += 1
     await session.flush()

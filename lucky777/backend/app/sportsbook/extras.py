@@ -186,6 +186,7 @@ async def backfill_extras(session: AsyncSession, limit: int = 800) -> int:
     have = select(Market.event_id).where(Market.type == "odd_even")
     evs = (await session.execute(
         select(Event).where(Event.status == "scheduled",
+                            ~Event.provider_id.like("outright:%"),
                             Event.id.not_in(have)).limit(limit))).scalars().all()
     made = 0
     for ev in evs:
@@ -196,6 +197,7 @@ async def backfill_extras(session: AsyncSession, limit: int = 800) -> int:
     have_tt = select(Market.event_id).where(Market.type == "team_total_home")
     evs_tt = (await session.execute(
         select(Event).where(Event.status == "scheduled",
+                            ~Event.provider_id.like("outright:%"),
                             Event.id.not_in(have_tt)).limit(limit))).scalars().all()
     for ev in evs_tt:
         key = await _sport_key_of(session, ev)

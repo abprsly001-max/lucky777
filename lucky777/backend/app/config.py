@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     live_odds_poll_seconds: int = 0   # real in-play prices for live games
     props_sync_hours: int = 0         # auto-pull player props for the majors
     esports_enabled: int = 1          # the house esports circuit
+    futures_sync_hours: int = 12      # outrights: championships, MVPs, awards
 
     class Config:
         env_prefix = "LUCKY777_"

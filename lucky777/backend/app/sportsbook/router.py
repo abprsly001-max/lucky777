@@ -558,14 +558,16 @@ async def simulate(req: SimulateRequest, _: User = Depends(current_master),
     scores; the grading and settlement code underneath is identical.
     """
     now = datetime.now(timezone.utc)
+    no_futures = ~Event.provider_id.like("outright:%")   # futures never simulate
     if req.event_ids:
-        q = select(Event).where(Event.id.in_(req.event_ids))
+        q = select(Event).where(Event.id.in_(req.event_ids), no_futures)
     else:
         # anything that has kicked off, else just the soonest, so a demo always works
-        q = (select(Event).where(Event.status == "scheduled", Event.starts_at <= now)
+        q = (select(Event).where(Event.status == "scheduled", no_futures,
+                                 Event.starts_at <= now)
              .limit(req.count))
         if not (await session.execute(q)).scalars().all():
-            q = (select(Event).where(Event.status == "scheduled")
+            q = (select(Event).where(Event.status == "scheduled", no_futures)
                  .order_by(Event.starts_at).limit(req.count))
     evs = (await session.execute(q)).scalars().all()
     if not evs:

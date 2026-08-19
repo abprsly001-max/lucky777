@@ -41,6 +41,7 @@ async def _live_ticker():
     since_live_odds = 0
     since_props = settings.props_sync_hours * 3600   # pull soon after boot
     since_esports = 1800                      # stock the circuit on boot
+    since_futures = settings.futures_sync_hours * 3600   # stock futures on boot
     while True:
         await asyncio.sleep(settings.live_tick_seconds)
         try:
@@ -83,6 +84,13 @@ async def _live_ticker():
                             await esports.ensure_schedule(session)
                         await esports.kickoff_due(session)
                         await live.tick(session, synthetic_only=True)
+                    if settings.futures_sync_hours:
+                        since_futures += settings.live_tick_seconds
+                        if since_futures >= settings.futures_sync_hours * 3600:
+                            since_futures = 0
+                            from .sportsbook import ingest
+                            fu = await ingest.sync_futures(session)
+                            log.info("futures re-synced: %s", fu)
                     if board_every and since_board >= board_every:
                         since_board = 0
                         since_featured = 0
@@ -106,6 +114,12 @@ async def _live_ticker():
                             since_esports = 0
                             await esports.ensure_schedule(session)
                         await esports.kickoff_due(session)
+                    if settings.futures_sync_hours:
+                        since_futures += settings.live_tick_seconds
+                        if since_futures >= settings.futures_sync_hours * 3600:
+                            since_futures = 0
+                            from .sportsbook import ingest
+                            await ingest.sync_futures(session)
                     r = await live.tick(session)
                 from .racebook.router import tick as rb_tick
                 rb = await rb_tick(session)
@@ -208,7 +222,7 @@ app.include_router(sportsbook_router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "build": "2026-08-19-exotic-sheet"}
+    return {"ok": True, "build": "2026-08-19-futures-racing"}
 
 
 # serve the built frontend if it exists (single-command production mode)

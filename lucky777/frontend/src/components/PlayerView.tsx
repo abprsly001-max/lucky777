@@ -42,7 +42,7 @@ export default function PlayerView({ onBalance, username }: {
     { id: "transactions", icon: "🔁", label: "Transactions" },
     { id: "rules", icon: "ℹ️", label: "Rules" },
     { id: "scores", icon: "🗓️", label: "Scores" },
-    { id: "horses", icon: "🐎", label: "Horses" },
+    { id: "horses", icon: "🐎", label: "Racing" },
     { id: "casino", icon: "🎲", label: "Casino" },
     { id: "settings", icon: "⚙️", label: "Settings" },
   ];
@@ -4838,7 +4838,7 @@ function Horses({ onBalance }: { onBalance: (b: string) => void }) {
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
               t.key === trackKey ? "btn-gold text-base-900"
                 : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
-            🐎 {t.name}
+            {t.key.startsWith("motor_") ? "🏎" : "🐎"} {t.name}
           </button>
         ))}
       </div>

@@ -243,6 +243,51 @@ class FixtureProvider(OddsProvider):
                         line=str(base), selections=rungs))
         return out
 
+    # ---------------------------------------------------------------- futures
+    # leagues that also hang an MVP race next to the title market
+    _MVP_LEAGUES = {"nfl", "nba", "mlb", "nhl", "epl"}
+
+    async def fetch_futures(self) -> list[ProviderEvent]:
+        """Outrights per league: Championship Winner for every competition,
+        plus an MVP race for the majors. Deterministic like the fixtures."""
+        rng = random.Random(f"{self.seed}:futures")
+        now = datetime.now(timezone.utc)
+        out: list[ProviderEvent] = []
+        for (sport_key, sport_name, icon, comp_key, comp_name,
+             country, _three_way, teams) in CATALOG:
+            comp = ProviderCompetition(
+                key=comp_key, name=comp_name, sport_key=sport_key,
+                sport_name=sport_name, country=country, icon=icon)
+            ends = now + timedelta(days=rng.randint(60, 240))
+            weights = [rng.uniform(0.5, 3.0) for _ in teams]
+            total_w = sum(weights)
+            priced = apply_margin(
+                [Decimal(str(w / total_w)) for w in weights], Decimal("1.25"))
+            title = f"{comp_name} — Championship Winner"
+            out.append(ProviderEvent(
+                provider_id=f"outright:{comp_key}:champ",
+                competition=comp, home=title, away="Futures", starts_at=ends,
+                markets=[ProviderMarket(type="outright", name=title,
+                         selections=[ProviderSelection(
+                             t.lower().replace(" ", "_")[:24], t, p)
+                             for t, p in zip(teams, priced)])]))
+            if comp_key in self._MVP_LEAGUES:
+                players = [self._player(rng, rng.choice(teams)) for _ in range(8)]
+                w2 = [rng.uniform(0.5, 3.0) for _ in players]
+                tw2 = sum(w2)
+                priced2 = apply_margin(
+                    [Decimal(str(w / tw2)) for w in w2], Decimal("1.30"))
+                mtitle = f"{comp_name} — Season MVP"
+                out.append(ProviderEvent(
+                    provider_id=f"outright:{comp_key}:mvp",
+                    competition=comp, home=mtitle, away="Futures",
+                    starts_at=ends,
+                    markets=[ProviderMarket(type="outright", name=mtitle,
+                             selections=[ProviderSelection(
+                                 f"p{i}", nm, p) for i, (nm, p)
+                                 in enumerate(zip(players, priced2))])]))
+        return out
+
     # ---------------------------------------------------------------- results
     async def fetch_results(self, provider_ids: list[str]) -> dict[str, tuple[int, int]]:
         """Simulate final scores. Seeded per event id so a result never changes

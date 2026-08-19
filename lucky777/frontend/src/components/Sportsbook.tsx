@@ -85,11 +85,16 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
     return () => clearInterval(t);
   }, [anyLive, loadEvents]);
 
+  // futures (outrights) live on their own board, never in the game lists
+  const isFutures = (e: SbEvent) => e.markets.some((m) => m.type === "outright");
+  const futures = useMemo(() => events.filter(isFutures), [events]);
+  const gameEvents = useMemo(() => events.filter((e) => !isFutures(e)), [events]);
+
   // sport -> leagues, straight off the board data
   const catalog = useMemo(() => {
     const out = new Map<string, { name: string; icon: string; live: boolean;
       leagues: Map<string, { name: string; count: number; live: boolean }> }>();
-    for (const ev of events) {
+    for (const ev of gameEvents) {
       const s = out.get(ev.sport) ?? { name: ev.sport_name, icon: ev.icon,
         live: false, leagues: new Map() };
       const l = s.leagues.get(ev.competition_key) ?? { name: ev.competition, count: 0, live: false };
@@ -99,13 +104,14 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
       out.set(ev.sport, s);
     }
     return out;
-  }, [events]);
+  }, [gameEvents]);
 
   const shownEvents = useMemo(() => {
-    const base = liveOnly ? events.filter((e) => e.status === "live")
-      : checked.size === 0 ? events : events.filter((e) => checked.has(e.competition_key));
+    const base = liveOnly ? gameEvents.filter((e) => e.status === "live")
+      : checked.size === 0 ? gameEvents
+      : gameEvents.filter((e) => checked.has(e.competition_key));
     return base;
-  }, [events, checked, liveOnly]);
+  }, [gameEvents, checked, liveOnly]);
 
   const refreshBets = useCallback(() => { api.sbMyBets().then(setBets).catch(() => {}); }, []);
   useEffect(() => { refreshBets(); }, [refreshBets]);
@@ -351,7 +357,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
                 api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
                   .catch(() => {}); }} />
           ) : (
-            <ClassicBoard events={shownEvents} picks={classicPicks}
+            <ClassicBoard events={shownEvents} futures={futures} picks={classicPicks}
               onToggle={(pk) => setClassicPicks((old) => {
                 const n = new Map(old);
                 n.has(pk.sel.id) ? n.delete(pk.sel.id) : n.set(pk.sel.id, pk);
@@ -1662,8 +1668,9 @@ function PriceChip({ top, bottom, on, onClick, selId }: {
   );
 }
 
-function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps }: {
-  events: SbEvent[]; picks: Map<number, ClassicPick>;
+function ClassicBoard({ events, futures = [], picks, onToggle, onRefresh,
+                        onContinue, onProps }: {
+  events: SbEvent[]; futures?: SbEvent[]; picks: Map<number, ClassicPick>;
   onToggle: (p: ClassicPick) => void;
   onRefresh: () => void; onContinue: () => void; onProps?: () => void;
 }) {
@@ -1714,7 +1721,7 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
         on={picks.has(pk.sel.id)} onClick={() => onToggle(pk)} />
     ) : <div className="h-12 rounded-lg border border-dashed border-slate-200" />;
 
-  if (upcoming.length === 0) {
+  if (upcoming.length === 0 && futures.length === 0) {
     return (
       <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-8 text-center text-sm text-slate-500">
         Nothing on the board for these leagues right now.
@@ -1738,10 +1745,73 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
             <span className="text-lg">{sp.icon}</span>{sp.name}
           </button>
         ))}
+        {futures.length > 0 && (
+          <button onClick={() => setSport("futures")}
+            className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl px-4 py-2 text-[11px] font-semibold ${
+              sport === "futures" ? "btn-gold text-base-900"
+                : "bg-base-800 text-amber-300/90 hover:bg-base-700"}`}>
+            <span className="text-lg">🏆</span>Futures
+          </button>
+        )}
       </div>
 
+      {/* futures: the outright sheets, grouped like a book's futures wall */}
+      {(sport === "futures" || sport !== "all") && (() => {
+        const list = sport === "futures" ? futures
+          : futures.filter((f) => f.sport === sport);
+        if (list.length === 0) return null;
+        return (
+          <div className="mb-3 space-y-3">
+            {sport !== "futures" && (
+              <div className="flex items-center gap-2 pt-1 text-[11px] font-bold uppercase tracking-wider text-amber-300/90">
+                🏆 Futures
+              </div>
+            )}
+            {list.map((ev) => {
+              const om = ev.markets.find((m) => m.type === "outright");
+              if (!om) return null;
+              const expanded = open.has(ev.id);
+              const sels = expanded ? om.selections : om.selections.slice(0, 9);
+              return (
+                <div key={ev.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
+                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                      {ev.icon} {ev.home}
+                    </span>
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-700">
+                      Futures
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 p-2 sm:grid-cols-3">
+                    {sels.map((x) => {
+                      const pk = mk(ev, om, x.key);
+                      return pk ? (
+                        <PriceChip key={x.id} top={x.name} bottom={x.american}
+                          selId={x.id} on={picks.has(x.id)}
+                          onClick={() => onToggle(pk)} />
+                      ) : null;
+                    })}
+                  </div>
+                  {om.selections.length > 9 && (
+                    <button onClick={() => setOpen((o) => {
+                      const n = new Set(o);
+                      n.has(ev.id) ? n.delete(ev.id) : n.add(ev.id);
+                      return n;
+                    })}
+                      className="w-full border-t border-slate-100 py-2 text-center text-[11px] font-semibold text-sky-600 hover:bg-slate-50">
+                      {expanded ? "Show less"
+                        : `Show all ${om.selections.length} ›`}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       <div className="space-y-3">
-        {shown.slice(0, visible).map((ev) => {
+        {(sport === "futures" ? [] : shown.slice(0, visible)).map((ev) => {
           const kick = new Date(ev.starts_at + (ev.starts_at.endsWith("Z") ? "" : "Z"));
           const spread = ev.markets.find((m) => m.type === "spreads");
           const total = ev.markets.find((m) => m.type === "totals");

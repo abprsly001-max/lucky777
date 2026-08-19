@@ -220,6 +220,73 @@ class TheOddsApiProvider(OddsProvider):
                                              line=line, selections=sels))
         return result
 
+    # ------------------------------------------------------------ futures ----
+    async def fetch_futures(self, max_sports: int = 80) -> list[ProviderEvent]:
+        """Every outright the feed carries: championship winners, MVPs,
+        award races, division winners, season specials. One multi-way
+        market per outright, consensus-priced across the quoted books.
+
+        Provider ids carry an `outright:` prefix so the live engine, the
+        scores flow, and the exotics builder all know to leave these alone.
+        """
+        now = datetime.now(timezone.utc)
+        out: list[ProviderEvent] = []
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(f"{BASE}/sports", params={"apiKey": self.api_key})
+            r.raise_for_status()
+            sports = [s for s in r.json()
+                      if s.get("active") and s.get("has_outrights")]
+            sports.sort(key=lambda s: self._rank(s["key"]))
+            for sport in sports[:max_sports]:
+                sk = sport["key"]
+                resp = await client.get(
+                    f"{BASE}/sports/{sk}/odds",
+                    params={"apiKey": self.api_key, "regions": self.regions,
+                            "markets": "outrights", "oddsFormat": "decimal"})
+                if resp.status_code != 200:
+                    continue
+                group_key, group_name, icon = self._group(sk)
+                title = sport.get("title", sk)
+                comp = ProviderCompetition(
+                    key=sk, name=title, sport_key=group_key,
+                    sport_name=group_name, country=sport.get("group", ""),
+                    icon=icon)
+                for ev in resp.json():
+                    try:
+                        starts = datetime.fromisoformat(
+                            ev["commence_time"].replace("Z", "+00:00"))
+                    except (KeyError, ValueError):
+                        continue
+                    if starts <= now:
+                        continue
+                    # consensus per outcome across every quoted book
+                    quotes: dict[str, list[Decimal]] = {}
+                    for bk in ev.get("bookmakers") or []:
+                        for m in bk.get("markets", []):
+                            if m.get("key") != "outrights":
+                                continue
+                            for o in m.get("outcomes", []):
+                                quotes.setdefault(o["name"], []).append(
+                                    _decimal_odds(o["price"]))
+                    if len(quotes) < 2:
+                        continue
+                    priced = []
+                    for name, prices in quotes.items():
+                        p = 1 / median([1 / x for x in prices])
+                        priced.append((name, min(Decimal(501),
+                                                 max(Decimal("1.01"), p))))
+                    # shortest first; a 200-runner award race gets its head cut
+                    priced.sort(key=lambda t: t[1])
+                    sels = [ProviderSelection(
+                        name.lower().replace(" ", "_")[:24], name, price)
+                        for name, price in priced[:40]]
+                    out.append(ProviderEvent(
+                        provider_id=f"outright:{ev['id']}", competition=comp,
+                        home=title, away="Futures", starts_at=starts,
+                        markets=[ProviderMarket(type="outright", name=title,
+                                                selections=sels)]))
+        return out
+
     # -------------------------------------------------------------- props ----
     PROP_KEYS = {
         "pitcher_strikeouts": ("prop:ks", "Strikeouts"),
