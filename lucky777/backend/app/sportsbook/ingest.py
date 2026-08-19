@@ -51,6 +51,7 @@ async def upsert_event(session: AsyncSession, pe: ProviderEvent) -> Event:
 
     ev = (await session.execute(
         select(Event).where(Event.provider_id == pe.provider_id))).scalar_one_or_none()
+    is_new = ev is None
     if not ev:
         ev = Event(provider_id=pe.provider_id, competition_id=comp.id, home=pe.home,
                    away=pe.away, starts_at=pe.starts_at, status=pe.status)
@@ -84,6 +85,17 @@ async def upsert_event(session: AsyncSession, pe: ProviderEvent) -> Event:
                 sel.odds_decimal = price
                 sel.name = ps.name
                 session.add(OddsHistory(selection_id=sel.id, odds_decimal=price))
+
+    if is_new:
+        # every new game lands with per-side totals already on the board,
+        # split off the game total by the moneyline lean
+        from .live import TEAM_TOTAL_SPORTS, _build_team_totals
+        key = pe.competition.sport_key.split("_")[0]
+        if key in TEAM_TOTAL_SPORTS:
+            main_total = (await session.execute(
+                select(Market).where(Market.event_id == ev.id,
+                                     Market.type == "totals"))).scalars().first()
+            await _build_team_totals(session, ev, key, main_total)
     return ev
 
 

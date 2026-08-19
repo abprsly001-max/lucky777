@@ -206,7 +206,9 @@ async def test_period_markets_open_reprice_and_grade_midgame(session):
     per = (await session.execute(
         select(Market).where(Market.event_id == ev.id,
                              Market.type.like("period:%")))).scalars().all()
-    assert {p.type for p in per} == {"period:f5:h2h", "period:f5:total"}
+    # baseball opens the full menu: 1st 3, 1st 5, and 1st 7 innings
+    assert {p.type for p in per} == {
+        f"period:{s}:{k}" for s in ("f3", "f5", "f7") for k in ("h2h", "total")}
     assert all(p.status == "open" for p in per)
 
     # a live ticket on the F5 winner (home)
@@ -224,7 +226,9 @@ async def test_period_markets_open_reprice_and_grade_midgame(session):
         [{"p": f"Inn {i}", "h": x, "a": y} for i, (x, y) in
          enumerate([(1, 0), (0, 0), (2, 1), (0, 0), (0, 0), (1, 2)], start=1)])
     _, graded = await live._process_periods(session, ev, "baseball")
-    assert graded == 4                       # both markets, both sides
+    # innings 1-6 in the books: F3 and F5 both complete (2 markets x 2 sides
+    # each), the 1st-7 scope is still running
+    assert graded == 8
     assert f5w.status == "settled"
     assert home_sel.result == "won"
 

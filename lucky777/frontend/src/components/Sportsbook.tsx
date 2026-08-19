@@ -1153,13 +1153,16 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
   ev: SbEvent; selected: Set<number>; onPick: PickFn; onBack: () => void;
 }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
-    { winner: true, spread: true, total: true, pwinner: true, ptotal: true });
+    { winner: true, spread: true, total: true, teamtotal: true,
+      pwinner: true, ptotal: true });
   const [moreSpread, setMoreSpread] = useState(false);
   const [moreTotal, setMoreTotal] = useState(false);
   const [scope, setScope] = useState("game");
 
   const SCOPE_LABEL: Record<string, string> = {
-    f5: "1st 5 Innings", h1q: "1st Half", h1s: "1st Half", p1: "1st Period",
+    f3: "1st 3 Inn", f5: "1st 5 Inn", f7: "1st 7 Inn",
+    q1: "1st Quarter", h1q: "1st Half", h1s: "1st Half",
+    p1: "1st Period", p2: "2nd Period",
   };
   const periodScopes = useMemo(() => {
     const seen: string[] = [];
@@ -1181,6 +1184,8 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
     .sort((a, b) => Number(b.line) - Number(a.line));
   const totals = ev.markets.filter((m) => m.type === "alt_totals")
     .sort((a, b) => Number(b.line) - Number(a.line));
+  const teamTotals = ev.markets.filter((m) => m.type.startsWith("team_total"))
+    .sort((a) => (a.type === "team_total_home" ? -1 : 1));
   const periods = ev.period_scores ?? [];
 
   const evenness = (m: SbMarket) => {
@@ -1328,6 +1333,27 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
               {groupHead("total", "Total")}
               {openGroups.total && ladder(totals, moreTotal, setMoreTotal, (m, side) =>
                 side === 0 ? `Over ${m.line}` : `Under ${m.line}`)}
+            </div>
+          )}
+
+          {teamTotals.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+              {groupHead("teamtotal", "Team Totals")}
+              {openGroups.teamtotal && (
+                <div className="space-y-1 p-2">
+                  {teamTotals.map((m) => (
+                    <div key={m.id}>
+                      <div className="px-1 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {m.type === "team_total_home" ? ev.home : ev.away} · {m.line}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">
+                        {pairBtn(m, m.selections.find((x) => x.key === "over"), `Over ${m.line}`)}
+                        {pairBtn(m, m.selections.find((x) => x.key === "under"), `Under ${m.line}`)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </>

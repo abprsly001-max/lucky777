@@ -134,24 +134,31 @@ async def go_live(session: AsyncSession, event_ids: list[int] | None = None,
         key = await _sport_key(session, ev)
         ev.period = _period(key, 0, settings.live_total_steps)
         main_spread = main_total = None
-        # suspend everything but the moneyline -- see module docstring
+        has_team_totals = False
+        # suspend everything but the moneyline (and the team totals, which the
+        # live model reprices honestly) -- see module docstring
         for m in (await session.execute(
                 select(Market).where(Market.event_id == ev.id,
                                      Market.status == "open"))).scalars().all():
-            if m.type != "h2h":
-                m.status = "suspended"
-                if m.type == "spreads":
-                    main_spread = m
-                elif m.type == "totals":
-                    main_total = m
-            else:
+            if m.type in ("h2h", "team_total_home", "team_total_away"):
+                if m.type != "h2h":
+                    has_team_totals = True
                 # freeze the kickoff price as the live model's baseline
                 for s in (await session.execute(
                         select(Selection).where(Selection.market_id == m.id)
                 )).scalars().all():
                     s.opening_odds = s.odds_decimal
+            else:
+                m.status = "suspended"
+                if m.type == "spreads":
+                    main_spread = m
+                elif m.type == "totals":
+                    main_total = m
         await _build_alt_ladders(session, ev, key, main_spread, main_total)
         await _build_period_markets(session, ev, key)
+        if not has_team_totals and key in TEAM_TOTAL_SPORTS:
+            # older events never got pregame team totals: synthesize them now
+            await _build_team_totals(session, ev, key, main_total)
     await session.flush()
     return evs
 
@@ -259,12 +266,21 @@ ALT_OFFSETS = [Decimal(x) for x in
 
 # period markets per sport: (scope id, display label, opening period total)
 PERIOD_DEFS: dict[str, list[tuple[str, str, Decimal]]] = {
-    "baseball": [("f5", "1st 5 Innings", Decimal("4.5"))],
-    "basketball": [("h1q", "1st Half", Decimal("112.5"))],
-    "americanfootball": [("h1q", "1st Half", Decimal("21.5"))],
-    "icehockey": [("p1", "1st Period", Decimal("1.5"))],
+    "baseball": [("f3", "1st 3 Innings", Decimal("2.5")),
+                 ("f5", "1st 5 Innings", Decimal("4.5")),
+                 ("f7", "1st 7 Innings", Decimal("6.5"))],
+    "basketball": [("q1", "1st Quarter", Decimal("55.5")),
+                   ("h1q", "1st Half", Decimal("112.5"))],
+    "americanfootball": [("q1", "1st Quarter", Decimal("10.5")),
+                         ("h1q", "1st Half", Decimal("21.5"))],
+    "icehockey": [("p1", "1st Period", Decimal("1.5")),
+                  ("p2", "2nd Period", Decimal("1.5"))],
     "soccer": [("h1s", "1st Half", Decimal("1.5"))],
 }
+
+# sports where a per-team total makes sense (points/goals/runs, not sets)
+TEAM_TOTAL_SPORTS = {"baseball", "basketball", "americanfootball",
+                     "icehockey", "soccer", "rugby", "cricket"}
 
 # a sane opening total per sport, for games the feed never priced
 DEFAULT_TOTALS = {
@@ -346,6 +362,44 @@ async def _build_alt_ladders(session: AsyncSession, ev: Event, sport_key: str,
                 session.add(Selection(market_id=m.id, key=k, name=name,
                                       odds_decimal=str(price),
                                       opening_odds=str(price)))
+    await session.flush()
+
+
+def _half_line(v: Decimal) -> Decimal:
+    """Snap an expectation to the nearest x.5 line (no pushes on the main)."""
+    return Decimal(int(v)) + Decimal("0.5")
+
+
+async def _build_team_totals(session: AsyncSession, ev: Event, sport_key: str,
+                             main_total: Market | None) -> None:
+    """Per-side totals: split the game total by the moneyline lean.
+
+    The stronger side is expected to score a touch more of the game total;
+    each side's line snaps to the nearest half point and prices off how far
+    the expectation sits from it."""
+    if main_total is not None and main_total.line is not None:
+        game_total = Decimal(main_total.line)
+    else:
+        game_total = DEFAULT_TOTALS.get(sport_key, Decimal("2.5"))
+    p_home = await _h2h_home_prob(session, ev)
+    hp2 = Decimal(str(HALF_POINT_PROB.get(sport_key, 0.03))) * 2
+    for side, team, exp in (
+            ("home", ev.home,
+             game_total / 2 + (p_home - Decimal("0.5")) * game_total * Decimal("0.15")),
+            ("away", ev.away,
+             game_total / 2 - (p_home - Decimal("0.5")) * game_total * Decimal("0.15"))):
+        line = _half_line(exp)
+        p_over = Decimal("0.5") + (exp - line) * hp2
+        priced = _price_pair(p_over)
+        m = Market(event_id=ev.id, type=f"team_total_{side}", line=str(line),
+                   name=f"{team} Total", status="open")
+        session.add(m)
+        await session.flush()
+        for (name, k), price in zip(
+                ((f"Over {line}", "over"), (f"Under {line}", "under")), priced):
+            session.add(Selection(market_id=m.id, key=k, name=name,
+                                  odds_decimal=str(price),
+                                  opening_odds=str(price)))
     await session.flush()
 
 
@@ -505,7 +559,8 @@ async def _reprice_alts(session: AsyncSession, ev: Event, sport_key: str,
         select(Selection, Market)
         .join(Market, Market.id == Selection.market_id)
         .where(Market.event_id == ev.id,
-               Market.type.in_(("alt_spreads", "alt_totals")),
+               Market.type.in_(("alt_spreads", "alt_totals",
+                                "team_total_home", "team_total_away")),
                Market.status == "open"))).all()
     if not rows:
         return 0
@@ -522,8 +577,13 @@ async def _reprice_alts(session: AsyncSession, ev: Event, sport_key: str,
     for mid, sels in by_market.items():
         m = markets[mid]
         line = Decimal(m.line or "0")
+        team_score = ((ev.home_score or 0) if m.type == "team_total_home"
+                      else (ev.away_score or 0))
         if m.type == "alt_totals" and Decimal(current_total) > line:
             m.status = "suspended"          # the over is already in
+            continue
+        if m.type.startswith("team_total") and Decimal(team_score) > line:
+            m.status = "suspended"          # this side's over is already in
             continue
         first = next((s for s in sels if s.key in ("home", "over")), None)
         second = next((s for s in sels if s.key in ("away", "under")), None)
@@ -534,6 +594,12 @@ async def _reprice_alts(session: AsyncSession, ev: Event, sport_key: str,
         if m.type == "alt_spreads":
             shift = Decimal(str(max(-0.5, min(0.5,
                 margin * mw * (0.15 + 0.60 * frac) * 0.8))))
+        elif m.type.startswith("team_total"):
+            # one team's total: its own pace against its own line, with a
+            # point worth roughly double what it is to the game total
+            expected_so_far = float(line) * frac
+            shift = Decimal(str(max(-0.5, min(0.5,
+                (team_score - expected_so_far) * pace * 2 * (0.2 + 0.8 * frac)))))
         else:
             expected_so_far = float(line) * frac
             shift = Decimal(str(max(-0.5, min(0.5,

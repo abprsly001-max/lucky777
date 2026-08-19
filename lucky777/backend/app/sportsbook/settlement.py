@@ -24,11 +24,17 @@ from .odds import result_factor
 # ---------------------------------------------------------- period scopes ----
 # scope id -> (labels inside the scope, labels that prove the scope is over)
 PERIOD_SCOPE_LABELS: dict[str, tuple[set[str], set[str]]] = {
+    "f3": ({f"Inn {i}" for i in range(1, 4)},
+           {f"Inn {i}" for i in range(4, 10)}),
     "f5": ({f"Inn {i}" for i in range(1, 6)},
            {f"Inn {i}" for i in range(6, 10)}),
+    "f7": ({f"Inn {i}" for i in range(1, 8)},
+           {f"Inn {i}" for i in range(8, 10)}),
+    "q1": ({"Q1"}, {"Q2", "HT", "Q3", "Q4"}),
     "h1q": ({"Q1", "Q2", "HT"}, {"Q3", "Q4"}),
     "h1s": ({"1H", "HT"}, {"2H"}),
     "p1": ({"P1"}, {"P2", "P3"}),
+    "p2": ({"P2"}, {"P3"}),
 }
 
 
@@ -102,6 +108,13 @@ def grade_selection(market: Market, sel: Selection, home: int, away: int) -> str
         if margin == 0:
             return "push"
         return "won" if (sel.key == "home") == (margin > 0) else "lost"
+
+    if t in ("team_total_home", "team_total_away"):
+        line = Decimal(market.line or "0")
+        score = Decimal(home if t.endswith("home") else away)
+        if score == line:
+            return "push"
+        return "won" if (sel.key == "over") == (score > line) else "lost"
 
     return "void"
 
