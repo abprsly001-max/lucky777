@@ -104,6 +104,101 @@ async def sync(session: AsyncSession, sport_keys: list[str] | None = None) -> di
     return {"provider": provider.name, "events": len(events)}
 
 
+async def sync_live_odds(session: AsyncSession) -> dict:
+    """Pull REAL in-play prices for games that are live right now.
+
+    The moneyline stays open through the game; with enough feed credits we
+    reprice it straight from the market instead of the simulator. The
+    synthetic derivatives (alt ladders, period markets) keep moving off
+    this anchor, so the whole live board follows real numbers."""
+    provider = get_provider()
+    rows = (await session.execute(
+        select(Event, Competition.key)
+        .join(Competition, Competition.id == Event.competition_id)
+        .where(Event.status == "live",
+               ~Event.provider_id.like("synth:%")))).all()
+    if not rows:
+        return {"live_repriced": 0, "polled_sports": 0}
+    sport_keys = sorted({ck for _, ck in rows})
+    feed = await provider.fetch_events(sport_keys=sport_keys)
+    by_pid = {fe.provider_id: fe for fe in feed}
+    repriced = 0
+    for ev, _ck in rows:
+        fe = by_pid.get(ev.provider_id)
+        if fe is None:
+            continue
+        fh2h = next((m for m in fe.markets if m.type == "h2h"), None)
+        if fh2h is None:
+            continue
+        feed_prices = {s.key: s.odds for s in fh2h.selections}
+        ours = (await session.execute(
+            select(Selection).join(Market, Market.id == Selection.market_id)
+            .where(Market.event_id == ev.id, Market.type == "h2h",
+                   Market.status == "open"))).scalars().all()
+        for s in ours:
+            p = feed_prices.get(s.key)
+            if p is None:
+                continue
+            new = str(p)
+            if new != s.odds_decimal:
+                s.odds_decimal = new
+                session.add(OddsHistory(selection_id=s.id, odds_decimal=new))
+                repriced += 1
+    await session.flush()
+    return {"live_repriced": repriced, "polled_sports": len(sport_keys)}
+
+
+PROPS_LEAGUES = ("baseball_mlb", "basketball_nba", "basketball_wnba",
+                 "americanfootball_nfl", "americanfootball_ncaaf",
+                 "icehockey_nhl")
+
+
+async def sync_props(session: AsyncSession, max_events: int = 40) -> dict:
+    """Auto-stock player props: upcoming games in the marquee leagues that
+    don't have props yet get them pulled from the feed, oldest kickoff
+    first. Budgeted by max_events per run."""
+    provider = get_provider()
+    if not hasattr(provider, "fetch_event_props"):
+        return {"pulled_events": 0, "note": "fixture feed carries its own"}
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(hours=36)
+    evs = (await session.execute(
+        select(Event, Competition.key)
+        .join(Competition, Competition.id == Event.competition_id)
+        .where(Event.status == "scheduled",
+               Competition.key.in_(PROPS_LEAGUES),
+               Event.starts_at <= horizon,
+               ~Event.provider_id.like("synth:%"))
+        .order_by(Event.starts_at))).all()
+    pulled = markets_added = 0
+    for ev, comp_key in evs:
+        if pulled >= max_events:
+            break
+        has = (await session.execute(
+            select(Market.id).where(Market.event_id == ev.id,
+                                    Market.type.like("prop:%")).limit(1)
+        )).scalar_one_or_none()
+        if has:
+            continue
+        try:
+            pms = await provider.fetch_event_props(comp_key, ev.provider_id)
+        except Exception:                                    # noqa: BLE001
+            continue
+        for pm in pms:
+            mk = Market(event_id=ev.id, type=pm.type, line=pm.line, name=pm.name)
+            session.add(mk)
+            await session.flush()
+            for ps in pm.selections:
+                session.add(Selection(
+                    market_id=mk.id, key=ps.key, name=ps.name,
+                    odds_decimal=str(ps.odds.quantize(Decimal("0.0001")))))
+            markets_added += 1
+        pulled += 1
+    await session.flush()
+    return {"pulled_events": pulled, "markets_added": markets_added}
+
+
 def has_live_scores(provider: OddsProvider) -> bool:
     return hasattr(provider, "fetch_scores")
 

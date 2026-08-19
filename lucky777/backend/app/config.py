@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     odds_max_sports: int = 50         # effectively every active sport
     featured_sync_minutes: int = 10   # majors refresh cadence (NFL/MLB/NBA/NHL...)
     live_total_steps: int = 18      # ~6 minutes of real time per game at 20s ticks
+    # big-plan extras (0 = off, sized for the 5M-credit tier):
+    live_odds_poll_seconds: int = 0   # real in-play prices for live games
+    props_sync_hours: int = 0         # auto-pull player props for the majors
+    esports_enabled: int = 1          # the house esports circuit
 
     class Config:
         env_prefix = "LUCKY777_"

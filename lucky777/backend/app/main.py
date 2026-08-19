@@ -38,6 +38,9 @@ async def _live_ticker():
     since_finals = finals_every
     since_board = board_every                 # full sync right after boot
     since_featured = 0
+    since_live_odds = 0
+    since_props = settings.props_sync_hours * 3600   # pull soon after boot
+    since_esports = 1800                      # stock the circuit on boot
     while True:
         await asyncio.sleep(settings.live_tick_seconds)
         try:
@@ -55,6 +58,31 @@ async def _live_ticker():
                         if finals:
                             since_finals = 0
                         r = await ingest.sync_scores(session, include_finals=finals)
+                    if settings.live_odds_poll_seconds:
+                        since_live_odds += settings.live_tick_seconds
+                        if since_live_odds >= settings.live_odds_poll_seconds:
+                            since_live_odds = 0
+                            from .sportsbook import ingest
+                            lo = await ingest.sync_live_odds(session)
+                            if lo.get("live_repriced"):
+                                log.info("in-play odds from the feed: %s", lo)
+                    if settings.props_sync_hours:
+                        since_props += settings.live_tick_seconds
+                        if since_props >= settings.props_sync_hours * 3600:
+                            since_props = 0
+                            from .sportsbook import ingest
+                            pr = await ingest.sync_props(session)
+                            if pr.get("pulled_events"):
+                                log.info("props auto-stocked: %s", pr)
+                    if settings.esports_enabled:
+                        # the house circuit runs itself, feed or no feed
+                        from .sportsbook import esports
+                        since_esports += settings.live_tick_seconds
+                        if since_esports >= 1800:
+                            since_esports = 0
+                            await esports.ensure_schedule(session)
+                        await esports.kickoff_due(session)
+                        await live.tick(session, synthetic_only=True)
                     if board_every and since_board >= board_every:
                         since_board = 0
                         since_featured = 0
@@ -71,6 +99,13 @@ async def _live_ticker():
                                 session, sport_keys=ingest.FEATURED_SPORTS)
                             log.info("majors re-synced: %s events", b.get("events"))
                 else:
+                    if settings.esports_enabled:
+                        from .sportsbook import esports
+                        since_esports += settings.live_tick_seconds
+                        if since_esports >= 1800:
+                            since_esports = 0
+                            await esports.ensure_schedule(session)
+                        await esports.kickoff_due(session)
                     r = await live.tick(session)
                 from .racebook.router import tick as rb_tick
                 rb = await rb_tick(session)
@@ -173,7 +208,7 @@ app.include_router(sportsbook_router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "build": "2026-08-19-polish2"}
+    return {"ok": True, "build": "2026-08-19-esports-turbo"}
 
 
 # serve the built frontend if it exists (single-command production mode)

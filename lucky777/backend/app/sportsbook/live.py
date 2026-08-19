@@ -419,11 +419,15 @@ def _reprice_h2h(rng: random.Random, sels: list[Selection], sport_key: str,
     return moved
 
 
-async def tick(session: AsyncSession) -> dict:
-    """Advance every live game one step of the clock."""
+async def tick(session: AsyncSession, synthetic_only: bool = False) -> dict:
+    """Advance every live game one step of the clock. With synthetic_only,
+    only the house's own fixtures (esports) tick — the real feed's games
+    are driven by real scores instead."""
     total = settings.live_total_steps
-    evs = (await session.execute(
-        select(Event).where(Event.status == "live"))).scalars().all()
+    q = select(Event).where(Event.status == "live")
+    if synthetic_only:
+        q = q.where(Event.provider_id.like("synth:%"))
+    evs = (await session.execute(q)).scalars().all()
 
     ended, repriced, period_graded = [], 0, 0
     for ev in evs:
