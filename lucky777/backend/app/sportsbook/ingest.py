@@ -96,6 +96,9 @@ async def upsert_event(session: AsyncSession, pe: ProviderEvent) -> Event:
                 select(Market).where(Market.event_id == ev.id,
                                      Market.type == "totals"))).scalars().first()
             await _build_team_totals(session, ev, key, main_total)
+        # ...and the exotic sheet: odd/even, winning margin, correct score
+        from .extras import build_extras
+        await build_extras(session, ev, key)
     return ev
 
 
@@ -112,8 +115,12 @@ async def sync(session: AsyncSession, sport_keys: list[str] | None = None) -> di
         events = await provider.fetch_events()
     for pe in events:
         await upsert_event(session, pe)
+    # games already on the board from before the exotic sheet existed
+    from .extras import backfill_extras
+    filled = await backfill_extras(session)
     await session.commit()
-    return {"provider": provider.name, "events": len(events)}
+    return {"provider": provider.name, "events": len(events),
+            "extras_backfilled": filled}
 
 
 async def sync_live_odds(session: AsyncSession) -> dict:

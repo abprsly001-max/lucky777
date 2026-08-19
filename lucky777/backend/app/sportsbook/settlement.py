@@ -31,10 +31,16 @@ PERIOD_SCOPE_LABELS: dict[str, tuple[set[str], set[str]]] = {
     "f7": ({f"Inn {i}" for i in range(1, 8)},
            {f"Inn {i}" for i in range(8, 10)}),
     "q1": ({"Q1"}, {"Q2", "HT", "Q3", "Q4"}),
+    "q2": ({"Q2"}, {"HT", "Q3", "Q4"}),
+    "q3": ({"Q3"}, {"Q4"}),
+    "q4": ({"Q4"}, set()),               # in the books only at full time
     "h1q": ({"Q1", "Q2", "HT"}, {"Q3", "Q4"}),
+    "h2q": ({"Q3", "Q4"}, set()),
     "h1s": ({"1H", "HT"}, {"2H"}),
+    "h2s": ({"2H"}, set()),
     "p1": ({"P1"}, {"P2", "P3"}),
     "p2": ({"P2"}, {"P3"}),
+    "p3": ({"P3"}, set()),
 }
 
 
@@ -67,6 +73,12 @@ def grade_period_selection(market: Market, sel: Selection,
         if total == line:
             return "push"
         return "won" if (sel.key == "over") == (total > line) else "lost"
+    if kind == "spread":
+        line = Decimal(market.line or "0")       # applied to the home side
+        margin = Decimal(h - a) + line
+        if margin == 0:
+            return "push"
+        return "won" if (sel.key == "home") == (margin > 0) else "lost"
     return "void"
 
 
@@ -116,6 +128,26 @@ def grade_selection(market: Market, sel: Selection, home: int, away: int) -> str
             return "push"
         return "won" if (sel.key == "over") == (score > line) else "lost"
 
+    if t == "odd_even":
+        return "won" if (sel.key == ("odd" if (home + away) % 2 else "even")) \
+            else "lost"
+
+    if t == "winning_margin":
+        from .extras import margin_band_hit
+        margin = home - away
+        if sel.key == "draw":
+            return "won" if margin == 0 else "lost"
+        if margin == 0:
+            # sport can't offer the draw here: a level game hands stakes back
+            return "void"
+        return "won" if margin_band_hit(sel.key, margin) else "lost"
+
+    if t == "correct_score":
+        from .extras import CS_GRID_MAX
+        if sel.key == "other":
+            return "won" if (home > CS_GRID_MAX or away > CS_GRID_MAX) else "lost"
+        return "won" if sel.key == f"{home}-{away}" else "lost"
+
     return "void"
 
 
@@ -132,9 +164,12 @@ async def grade_event(session: AsyncSession, event: Event,
     )).all()
 
     two_way_h2h = {}
+    margin_draws = set()          # winning-margin markets that DO offer the draw
     for sel, market in rows:
         if market.type == "h2h":
             two_way_h2h.setdefault(market.id, set()).add(sel.key)
+        elif market.type == "winning_margin" and sel.key == "draw":
+            margin_draws.add(market.id)
 
     n = 0
     for sel, market in rows:
@@ -148,6 +183,10 @@ async def grade_event(session: AsyncSession, event: Event,
             sel.result = grade_period_selection(market, sel, ph, pa)
         elif market.type == "h2h" and home == away and "draw" not in two_way_h2h[market.id]:
             sel.result = "void"      # tie on a market that never offered the draw
+        elif (market.type == "winning_margin" and home == away
+                and market.id in margin_draws):
+            # the draw WAS on the card: it wins, every band loses
+            sel.result = "won" if sel.key == "draw" else "lost"
         else:
             sel.result = grade_selection(market, sel, home, away)
         sel.status = "settled"

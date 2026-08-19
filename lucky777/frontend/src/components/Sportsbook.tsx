@@ -431,7 +431,7 @@ function OddsButton({ sel, active, onClick }: {
 }) {
   return (
     <button onClick={onClick}
-      className={`flex-1 rounded-lg px-2 py-2 text-left transition ${
+      className={`min-w-[96px] flex-1 rounded-lg px-2 py-2 text-left transition ${
         active ? "btn-gold text-base-900" : "border border-white/5 bg-base-700/80 hover:border-gold/30 hover:bg-base-600"}${
         active ? "" : flashCls(sel.id)}`}>
       <div className={`truncate text-[11px] ${active ? "text-base-900/70" : "text-slate-400"}`}>
@@ -588,7 +588,7 @@ function BoardRow({ ev, selected, onPick }: {
                     <span>{m.name}</span>
                     {m.hold_pct && <span>hold {m.hold_pct}%</span>}
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
                     {m.selections.map((s) => (
                       <OddsButton key={s.id} sel={s} active={selected.has(s.id)}
                         onClick={() => onPick(ev, m, s)} />
@@ -1154,15 +1154,16 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
 }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
     { winner: true, spread: true, total: true, teamtotal: true,
-      pwinner: true, ptotal: true });
+      pwinner: true, pspread: true, ptotal: true });
   const [moreSpread, setMoreSpread] = useState(false);
   const [moreTotal, setMoreTotal] = useState(false);
   const [scope, setScope] = useState("game");
 
   const SCOPE_LABEL: Record<string, string> = {
     f3: "1st 3 Inn", f5: "1st 5 Inn", f7: "1st 7 Inn",
-    q1: "1st Quarter", h1q: "1st Half", h1s: "1st Half",
-    p1: "1st Period", p2: "2nd Period",
+    q1: "1st Qtr", q2: "2nd Qtr", q3: "3rd Qtr", q4: "4th Qtr",
+    h1q: "1st Half", h2q: "2nd Half", h1s: "1st Half", h2s: "2nd Half",
+    p1: "1st Period", p2: "2nd Period", p3: "3rd Period",
   };
   const periodScopes = useMemo(() => {
     const seen: string[] = [];
@@ -1362,6 +1363,7 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
           {(() => {
             const w = scopeMarket(scope, "h2h");
             const t = scopeMarket(scope, "total");
+            const sp = scopeMarket(scope, "spread");
             const label = SCOPE_LABEL[scope] ?? scope;
             return (
               <>
@@ -1380,6 +1382,19 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
                     </p>
                   </div>
                 )}
+                {sp && (
+                  <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
+                    {groupHead("pspread", `${label} Spread`)}
+                    {openGroups.pspread && (
+                      <div className="grid grid-cols-2 gap-1 p-2">
+                        {pairBtn(sp, sp.selections.find((x) => x.key === "home"),
+                          `${ev.home} ${fmtLine(Number(sp.line))}`, true)}
+                        {pairBtn(sp, sp.selections.find((x) => x.key === "away"),
+                          `${ev.away} ${fmtLine(-Number(sp.line))}`, true)}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {t && (
                   <div className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
                     {groupHead("ptotal", `${label} Total`)}
@@ -1391,7 +1406,7 @@ function LiveDetail({ ev, selected, onPick, onBack }: {
                     )}
                   </div>
                 )}
-                {!w && !t && (
+                {!w && !t && !sp && (
                   <div className="rounded-xl border border-white/5 bg-base-800 p-6 text-center text-sm text-slate-500 shadow-card">
                     This period is in the books — its markets have settled.
                   </div>

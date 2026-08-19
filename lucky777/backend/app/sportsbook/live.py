@@ -172,6 +172,9 @@ async def _build_period_markets(session: AsyncSession, ev: Event,
     if not defs:
         return
     p_home = await _h2h_home_prob(session, ev)
+    main_spread_line = (await session.execute(
+        select(Market.line).where(Market.event_id == ev.id,
+                                  Market.type == "spreads"))).scalars().first()
     for scope, label, total_line in defs:
         # a shorter sample drags the favourite back toward even
         p_scope = Decimal("0.5") + (p_home - Decimal("0.5")) * Decimal("0.8")
@@ -192,6 +195,33 @@ async def _build_period_markets(session: AsyncSession, ev: Event,
                       odds_decimal=str(tp[0]), opening_odds=str(tp[0])),
             Selection(market_id=t.id, key="under", name=f"Under {total_line}",
                       odds_decimal=str(tp[1]), opening_odds=str(tp[1])),
+        ])
+        # the scope's own spread: the game line scaled to the scope's share,
+        # snapped to a half point (pick'em games get the classic -0.5)
+        share = PERIOD_SHARE.get(scope, Decimal("0.5"))
+        if main_spread_line is not None:
+            try:
+                raw = Decimal(main_spread_line) * share
+            except Exception:                                # noqa: BLE001
+                raw = Decimal(0)
+        else:
+            raw = Decimal(0)
+        sp_line = (raw * 2).quantize(Decimal("1")) / 2
+        if sp_line % 1 == 0:      # landed on a whole number: no pushes on the main
+            sp_line += Decimal("-0.5") if p_home >= Decimal("0.5") else Decimal("0.5")
+        sp = Market(event_id=ev.id, type=f"period:{scope}:spread",
+                    name=f"{label} Spread", line=str(sp_line), status="open")
+        session.add(sp)
+        await session.flush()
+        # near-even by construction: the line already carries the lean
+        pp = _price_pair(Decimal("0.5") + (p_scope - Decimal("0.5")) * Decimal("0.2"))
+        session.add_all([
+            Selection(market_id=sp.id, key="home",
+                      name=f"{ev.home} {'+' if sp_line >= 0 else ''}{sp_line}",
+                      odds_decimal=str(pp[0]), opening_odds=str(pp[0])),
+            Selection(market_id=sp.id, key="away",
+                      name=f"{ev.away} {'+' if -sp_line >= 0 else ''}{-sp_line}",
+                      odds_decimal=str(pp[1]), opening_odds=str(pp[1])),
         ])
 
 
@@ -236,6 +266,10 @@ async def _process_periods(session: AsyncSession, ev: Event,
         if m.type.endswith(":h2h"):
             shift = max(Decimal("-0.35"), min(Decimal("0.35"),
                         Decimal(h - a) * mw * Decimal("0.4")))
+        elif m.type.endswith(":spread"):
+            line = Decimal(m.line or "0")
+            shift = max(Decimal("-0.35"), min(Decimal("0.35"),
+                        (Decimal(h - a) + line) * mw * Decimal("0.3")))
         else:
             line = Decimal(m.line or "1")
             shift = max(Decimal("-0.35"), min(Decimal("0.35"),
@@ -270,12 +304,32 @@ PERIOD_DEFS: dict[str, list[tuple[str, str, Decimal]]] = {
                  ("f5", "1st 5 Innings", Decimal("4.5")),
                  ("f7", "1st 7 Innings", Decimal("6.5"))],
     "basketball": [("q1", "1st Quarter", Decimal("55.5")),
-                   ("h1q", "1st Half", Decimal("112.5"))],
+                   ("h1q", "1st Half", Decimal("112.5")),
+                   ("q2", "2nd Quarter", Decimal("55.5")),
+                   ("q3", "3rd Quarter", Decimal("55.5")),
+                   ("q4", "4th Quarter", Decimal("55.5")),
+                   ("h2q", "2nd Half", Decimal("112.5"))],
     "americanfootball": [("q1", "1st Quarter", Decimal("10.5")),
-                         ("h1q", "1st Half", Decimal("21.5"))],
+                         ("h1q", "1st Half", Decimal("21.5")),
+                         ("q2", "2nd Quarter", Decimal("10.5")),
+                         ("q3", "3rd Quarter", Decimal("10.5")),
+                         ("q4", "4th Quarter", Decimal("10.5")),
+                         ("h2q", "2nd Half", Decimal("21.5"))],
     "icehockey": [("p1", "1st Period", Decimal("1.5")),
-                  ("p2", "2nd Period", Decimal("1.5"))],
-    "soccer": [("h1s", "1st Half", Decimal("1.5"))],
+                  ("p2", "2nd Period", Decimal("1.5")),
+                  ("p3", "3rd Period", Decimal("1.5"))],
+    "soccer": [("h1s", "1st Half", Decimal("1.5")),
+               ("h2s", "2nd Half", Decimal("1.5"))],
+}
+
+# what share of the full game a scope covers -- sizes the scope's spread
+PERIOD_SHARE: dict[str, Decimal] = {
+    "f3": Decimal(3) / 9, "f5": Decimal(5) / 9, "f7": Decimal(7) / 9,
+    "q1": Decimal("0.25"), "q2": Decimal("0.25"),
+    "q3": Decimal("0.25"), "q4": Decimal("0.25"),
+    "h1q": Decimal("0.5"), "h2q": Decimal("0.5"),
+    "h1s": Decimal("0.5"), "h2s": Decimal("0.5"),
+    "p1": Decimal(1) / 3, "p2": Decimal(1) / 3, "p3": Decimal(1) / 3,
 }
 
 # sports where a per-team total makes sense (points/goals/runs, not sets)
