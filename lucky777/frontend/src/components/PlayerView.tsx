@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
+import { sfx } from "../sfx";
 import Duel from "./Duel";
 import GameArt, { GameLogo, SYMBOL_GLYPH } from "./GameArt";
 import Sportsbook from "./Sportsbook";
@@ -419,6 +420,7 @@ function Settings() {
 function Casino({ onBalance }: { onBalance: (b: string) => void }) {
   const [lobby, setLobby] = useState<Awaited<ReturnType<typeof api.casinoLobby>> | null>(null);
   const [cat, setCat] = useState<"all" | "slots" | "table" | "quick">("all");
+  const [mutedFlag, setMutedFlag] = useState(sfx.isMuted());
   const [game, setGame] = useState<string | null>(null);
 
   const load = () => {};
@@ -546,9 +548,16 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
               Lucky777 Casino
             </div>
           </div>
-          <div className="hidden text-right sm:block">
-            <div className="font-mono text-[10px] text-slate-500">{(lobby?.games ?? []).length} games on the floor</div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gold/80">Instant settle · House book</div>
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
+              <div className="font-mono text-[10px] text-slate-500">{(lobby?.games ?? []).length} games on the floor</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-gold/80">Instant settle · House book</div>
+            </div>
+            <button onClick={() => setMutedFlag(sfx.toggle())}
+              className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-base-900/60 text-base hover:border-gold/40"
+              title={mutedFlag ? "Sound off" : "Sound on"}>
+              {mutedFlag ? "\u{1F507}" : "\u{1F50A}"}
+            </button>
           </div>
         </div>
       </div>
@@ -665,7 +674,9 @@ function SlotGame({ def, onBalance, onPlayed }: {
   async function spin() {
     setErr(""); setLast(null); setSpinning(true);
     setLive([true, true, true]); setPopped([false, false, false]);
+    sfx.spin();
     const stopReel = (i: number, sym: string) => {
+      sfx.land();
       setReels((r) => { const n = [...r]; n[i] = sym; return n; });
       setLive((l) => { const n = [...l] as typeof live; n[i] = false; return n; });
       setPopped((pp) => { const n = [...pp] as typeof popped; n[i] = true; return n; });
@@ -676,6 +687,7 @@ function SlotGame({ def, onBalance, onPlayed }: {
         stopReel(i, r.reels[i]);
         if (i === 2) {
           setLast({ multiplier: r.multiplier, payout: r.payout, win: r.win });
+          if (r.win) sfx.win(); else sfx.lose();
           onBalance(r.balance);
           onPlayed();
           setSpinning(false);
@@ -864,13 +876,16 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
       setFresh(new Set(Object.keys(r.coins).map(Number)));
       setRespins(r.respins);
       setCollected(r.collected);
+      sfx.spin();
       await sleep(400);
-      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); }
+      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); sfx.land(); }
       await sleep(150);
       setSpinCells(false);
+      if (Object.keys(r.coins).length) sfx.chip();
       onBalance(r.balance);
       onPlayed();
       const grand = (r as any).grand && Number((r as any).grand) > 0;
+      if (grand) sfx.bigwin();
       if (kind === "spin" && (r as any).triggered) {
         setInFeature(true);
         setMsg(`🐷 HOLD & SPIN! ${Object.keys(r.locked).length} coins locked`);
@@ -1028,11 +1043,13 @@ function Lucky7({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPla
     setErr(""); setBusy(true); setMsg(null);
     try {
       for (let i = 0; i < 6; i++) {
+        sfx.tick();
         setDice([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]);
         await new Promise((r) => setTimeout(r, 90));
       }
       const r = await api.lucky7Roll(stake, bet);
       setDice(r.dice); onBalance(r.balance); onPlayed();
+      if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
       setMsg(Number(r.payout) > 0
         ? `${r.total} — ${bet.toUpperCase()} hits, paid ${money(r.payout)}`
         : `${r.total} — no good`);
@@ -1076,6 +1093,7 @@ function RPS({ onBalance, onPlayed }: { onBalance: (b: string) => void; onPlayed
       const r = await api.rpsThrow(stake, m);
       setLast({ p: r.player, h: r.house });
       onBalance(r.balance); onPlayed();
+      if (r.result === "win") sfx.win(); else if (r.result === "push") sfx.chip(); else sfx.lose();
       setMsg(r.result === "win" ? `House threw ${r.house} — you win ${money(r.payout)}`
         : r.result === "push" ? "Tie — stake back" : `House threw ${r.house} — house wins`);
     } catch (e: any) { setErr(e.message); }
@@ -1124,9 +1142,12 @@ function Darts({ def, onBalance, onPlayed }: {
   async function throwDart() {
     setErr(""); setBusy(true); setMsg(null); setLanded(null);
     try {
+      sfx.spin();
       const r = await api.dartsThrow(stake, bet);
       await new Promise((res) => setTimeout(res, 500));
+      sfx.land();
       setLanded(r.landed); onBalance(r.balance); onPlayed();
+      if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
       setMsg(Number(r.payout) > 0
         ? `🎯 ${r.landed.toUpperCase()} — paid ${money(r.payout)}`
         : `Landed ${r.landed} — no good`);
@@ -1180,12 +1201,14 @@ function Prism({ def, onBalance, onPlayed }: {
     try {
       const all = [...def.segments.map((s) => s.gem), "dust"];
       for (let i = 0; i < 8; i++) {
+        sfx.tick();
         setGem({ g: all[Math.floor(Math.random() * all.length)], m: "" });
         await new Promise((r) => setTimeout(r, 80));
       }
       const r = await api.prismSpin(stake);
       setGem({ g: r.gem, m: r.multiplier });
       onBalance(r.balance); onPlayed();
+      if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
       setMsg(Number(r.payout) > 0
         ? `${r.gem.toUpperCase()} ${r.multiplier}x — paid ${money(r.payout)}`
         : "Dust — nothing this time");
@@ -1251,7 +1274,10 @@ function LadderGame({ def, skin, onBalance, onPlayed }: {
     try {
       const r = await api.ladderStep(def.game, st.round_id);
       setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
-      if (!r.survived) setMsg(skin.bust);
+      if (!r.survived) { sfx.boom(); setMsg(skin.bust); }
+      else if (r.outcome !== "topped") sfx.chip();
+      if (r.survived && r.outcome === "topped") sfx.bigwin();
+      if (!r.survived) { /* handled */ }
       else if (r.outcome === "topped") setMsg(`🏆 ALL THE WAY — paid ${money(r.payout!)}`);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -1262,6 +1288,7 @@ function LadderGame({ def, skin, onBalance, onPlayed }: {
     try {
       const r = await api.ladderCashout(def.game, st.round_id);
       setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      sfx.cashout();
       setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout!)}`);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -1755,8 +1782,10 @@ function Keno({ def, onBalance, onPlayed }: {
       // balls drop one at a time
       for (const b of r.drawn) {
         await new Promise((res) => setTimeout(res, 160));
+        sfx.tick();
         setDrawn((d) => new Set([...d, b]));
       }
+      if (Number(r.win) > 0) sfx.win(); else sfx.lose();
       onBalance(r.balance); onPlayed();
       setMsg(Number(r.win) > 0
         ? `${r.hits} catches — ${r.multiplier}x paid ${money(r.win)}`
@@ -1929,8 +1958,9 @@ function Towers({ def, onBalance, onPlayed }: {
     try {
       const r = await api.towersPick(st.round_id, tile);
       setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
-      if (r.outcome === "bust") setMsg("💥 Trap — the stake is gone");
-      else if (r.outcome === "topped") setMsg(`🏆 TOP FLOOR — paid ${money(r.payout!)}`);
+      if (r.outcome === "bust") { sfx.boom(); setMsg("💥 Trap — the stake is gone"); }
+      else if (r.outcome === "topped") { sfx.bigwin(); setMsg(`🏆 TOP FLOOR — paid ${money(r.payout!)}`); }
+      else sfx.chip();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
   }
@@ -1940,6 +1970,7 @@ function Towers({ def, onBalance, onPlayed }: {
     try {
       const r = await api.towersCashout(st.round_id);
       setSt(r); if (r.balance) onBalance(r.balance); onPlayed();
+      sfx.cashout();
       setMsg(`Cashed out ${r.multiplier}x — ${money(r.payout!)}`);
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(false); }
@@ -2286,6 +2317,7 @@ function SugarBlast({ def, onBalance, onPlayed }: {
     setHotSyms(new Set()); setPopSyms(new Set()); setSpinBlur(true);
     try {
       const r = kind === "buy" ? await api.tumbleBuy(stake) : await api.tumbleSpin(stake);
+      sfx.spin();
       await sleep(340);
       setSpinBlur(false);
       // the fresh board rains in column by column, then the cascade plays
@@ -2298,6 +2330,7 @@ function SugarBlast({ def, onBalance, onPlayed }: {
         const syms = new Set(r.steps[i].map((w) => w.sym));
         acc += r.steps[i].reduce((s, w) => s + Number(w.pay), 0);
         setHotSyms(syms);
+        sfx.chip();
         setRunWin((acc * Number(stake)).toFixed(2));
         await sleep(520);
         setPopSyms(syms);
@@ -2310,6 +2343,7 @@ function SugarBlast({ def, onBalance, onPlayed }: {
       onPlayed();
       setFsLeft(r.free_spins_left);
       setBonusTotal(r.bonus_total);
+      if (Number(r.win) > 0) sfx.win();
       const bombs = Number(r.bomb_sum);
       if (r.free_spin) {
         if (Number(r.win) > 0 && bombs > 0)
@@ -2487,14 +2521,16 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
       setRespins(r.respins);
       setCollected(r.collected);
       // the columns stop left to right, like the real cabinets
+      sfx.spin();
       await sleep(400);
-      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); }
+      for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); sfx.land(); }
       await sleep(150);
       setSpinCells(false);
+      if (Object.keys(r.coins).length) sfx.chip();
       onBalance(r.balance);
       onPlayed();
       const tiers = Object.values(r.coins).filter(isTier);
-      if (tiers.length) setHitTier(tiers[tiers.length - 1]);
+      if (tiers.length) { setHitTier(tiers[tiers.length - 1]); sfx.bigwin(); }
       const grand = (r as any).grand && Number((r as any).grand) > 0;
       if (kind !== "respin" && (r as any).triggered) {
         setInFeature(true);
@@ -2826,6 +2862,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
     setErr(""); setBusy(true); setWins([]); setLastWin(null); setBanner(null);
     setStopped([false, false, false, false, false]);
     setLive([true, true, true, true, true]);
+    sfx.spin();
     try {
       const wasFree = freeLeft > 0;
       const r = await api.vslotSpin(vs.machine, stake);
@@ -2837,9 +2874,10 @@ function VideoSlot({ def, onBalance, onPlayed }: {
         });
         setLive((l) => { const n = [...l]; n[i] = false; return n; });
         setStopped((s) => { const n = [...s]; n[i] = true; return n; });
+        sfx.land();
         if (i === 4) {
           setWins(r.line_wins);
-          if (Number(r.win) > 0) setLastWin(r.win);
+          if (Number(r.win) > 0) { setLastWin(r.win); sfx.win(); }
           setFreeLeft(r.free_spins_left);
           setBonusTotal(r.bonus_total);
           if (!wasFree && r.free_spins_left > 0) {
@@ -3042,9 +3080,13 @@ function Roulette({ onBalance, onPlayed }: {
         return w + 4 * 360 + settle;
       });
       setBallRot((b) => b - (5 * 360 + ((b % 360) + 360) % 360));
+      sfx.spin();
+      const tickIv = window.setInterval(() => sfx.tick(), 260);
       window.setTimeout(() => {
+        window.clearInterval(tickIv);
         setBallDropped(true);
         setRolling(false);
+        if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
         setLast(r); onBalance(r.balance); onPlayed(); setBets([]);
         setBusy(false);
       }, 4100);
@@ -3379,11 +3421,19 @@ function Mines({ onBalance, onPlayed }: {
   const open = st?.status === "open";
   const done = st?.status === "settled";
 
-  async function run(fn: () => Promise<import("../api").MinesState>) {
+  const [shake, setShake] = useState(false);
+  async function run(fn: () => Promise<import("../api").MinesState>,
+                     kind: "start" | "pick" | "cash" = "pick") {
     setErr(""); setBusy(true);
     try {
+      const prev = st?.revealed.length ?? 0;
       const r = await fn();
       setSt(r);
+      if (kind === "pick") {
+        if (r.outcome === "bust") { sfx.boom(); setShake(true); window.setTimeout(() => setShake(false), 500); }
+        else if (r.revealed.length > prev) sfx.chip();
+        if (r.outcome === "cleared") sfx.bigwin();
+      } else if (kind === "cash") sfx.cashout();
       if (r.balance) onBalance(r.balance);
       onPlayed();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -3405,7 +3455,7 @@ function Mines({ onBalance, onPlayed }: {
         Pick tiles, dodge the mines, cash out whenever. More mines, bigger multipliers.
       </p>
 
-      <div className="mx-auto grid max-w-[300px] grid-cols-5 gap-1.5">
+      <div className={`mx-auto grid max-w-[300px] grid-cols-5 gap-1.5 ${shake ? "board-shake" : ""}`}>
         {Array.from({ length: 25 }, (_, i) => {
           const cs = cellState(i);
           return (
@@ -3417,7 +3467,9 @@ function Mines({ onBalance, onPlayed }: {
                 : cs === "mine" ? "border-red-500/30 bg-base-900/60 opacity-70"
                 : open ? "border-white/10 bg-base-700/70 hover:border-gold/40 hover:bg-base-600"
                 : "border-white/5 bg-base-900/50"}`}>
-              {cs === "safe" ? "💎" : cs === "boom" ? "💥" : cs === "mine" ? "💣" : ""}
+              {cs === "safe" ? <span className="reel-pop inline-block">💎</span>
+                : cs === "boom" ? <span className="reel-pop inline-block text-2xl">💥</span>
+                : cs === "mine" ? <span className="deal-flip inline-block">💣</span> : ""}
             </button>
           );
         })}
@@ -3451,13 +3503,13 @@ function Mines({ onBalance, onPlayed }: {
           </select>
         </label>
         {open && st ? (
-          <button onClick={() => run(() => api.minesCashout(st.round_id))}
+          <button onClick={() => run(() => api.minesCashout(st.round_id), "cash")}
             disabled={busy || st.revealed.length === 0}
             className="ml-auto rounded-lg bg-accent px-6 py-2 text-sm font-black uppercase tracking-wider text-base-900 hover:brightness-110 disabled:opacity-50">
             Cash out {st.revealed.length > 0 ? `${st.multiplier}×` : ""}
           </button>
         ) : (
-          <button onClick={() => run(() => api.minesStart(stake, mines))} disabled={busy}
+          <button onClick={() => run(() => api.minesStart(stake, mines), "start")} disabled={busy}
             className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
             Start
           </button>
@@ -3513,6 +3565,7 @@ function Plinko({ def, onBalance, onPlayed }: {
       const frame = (t: number) => {
         const el = Math.min(t - t0, total);
         const idx = Math.min(Math.floor(el / segDur), pts.length - 2);
+        if (idx !== (frame as any)._lastIdx) { (frame as any)._lastIdx = idx; if (idx > 0) sfx.peg(); }
         const u = Math.min((el - idx * segDur) / segDur, 1);
         const a = pts[idx], b = pts[idx + 1];
         const uy = u * u;                               // gravity
@@ -3527,6 +3580,8 @@ function Plinko({ def, onBalance, onPlayed }: {
           window.setTimeout(() => {
             setBall(null); setTrail([]);
             setLanded(r.bucket);
+            if (Number(r.payout) > Number(stake)) sfx.win();
+            else if (Number(r.payout) > 0) sfx.chip(); else sfx.lose();
             setLast({ multiplier: r.multiplier, payout: r.payout });
             onPlayed();
             setBusy(false);
@@ -3842,6 +3897,10 @@ function PlayingCard({ c }: { c: string }) {
 /* a card dealt off the shoe: it flies in, then flips face-up. Keyed by
    position+face, so a new card animates and the table doesn't re-deal. */
 function DealtCard({ c, i }: { c: string; i: number }) {
+  useEffect(() => {
+    const t = window.setTimeout(() => sfx.deal(), i * 150);
+    return () => window.clearTimeout(t);
+  }, []);
   return (
     <span key={`${i}-${c}`} className="deal-fly" style={{ animationDelay: `${i * 150}ms` }}>
       <span className="deal-flip" style={{ animationDelay: `${i * 150 + 170}ms` }}>
@@ -3987,14 +4046,37 @@ function DiceGame({ onBalance, onPlayed }: {
   const [last, setLast] = useState<Awaited<ReturnType<typeof api.diceBet>> | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sweep, setSweep] = useState<number | null>(null);
   const mult = (96 / chance).toFixed(4);
 
   async function roll() {
-    setErr(""); setBusy(true);
+    setErr(""); setBusy(true); setLast(null);
     try {
       const r = await api.diceBet(stake, String(chance));
-      setLast(r); onBalance(r.balance); onPlayed();
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      // the number hunts across the bar, slows, and locks on the roll
+      const final = Number(r.roll);
+      const t0 = performance.now();
+      const DUR = 1100;
+      sfx.spin();
+      let lastTick = 0;
+      const frame = (t: number) => {
+        const u = Math.min((t - t0) / DUR, 1);
+        const ease = 1 - Math.pow(1 - u, 3);
+        // early on it wanders; late it converges on the real number
+        const wander = Math.sin(u * 31) * 50 * (1 - ease);
+        const v = Math.max(0, Math.min(99.99, final * ease + (1 - ease) * 50 + wander));
+        setSweep(v);
+        if (t - lastTick > 90) { sfx.tick(); lastTick = t; }
+        if (u < 1) requestAnimationFrame(frame);
+        else {
+          setSweep(null);
+          if (r.win) sfx.win(); else sfx.lose();
+          setLast(r); onBalance(r.balance); onPlayed();
+          setBusy(false);
+        }
+      };
+      requestAnimationFrame(frame);
+    } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
   return (
@@ -4011,16 +4093,28 @@ function DiceGame({ onBalance, onPlayed }: {
       <input type="range" min={2} max={95} value={chance}
         onChange={(e) => setChance(Number(e.target.value))}
         className="w-full accent-gold" />
-      <div className="relative mt-2 h-3 overflow-hidden rounded-full bg-red-900/60">
-        <div className="h-full bg-accent/70" style={{ width: `${chance}%` }} />
-        {last && (
-          <div className="absolute top-0 h-full w-0.5 bg-white"
-            style={{ left: `${Math.min(99.5, Number(last.roll))}%` }} />
+      <div className="relative mt-2 h-4 overflow-visible rounded-full bg-red-900/60">
+        <div className="h-full rounded-l-full bg-accent/70" style={{ width: `${chance}%` }} />
+        {(sweep !== null || last) && (
+          <div className="absolute -top-1 h-6 w-1 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+            style={{ left: `${Math.min(99.5, sweep !== null ? sweep : Number(last!.roll))}%` }} />
+        )}
+      </div>
+      <div className="mt-2 grid h-12 place-items-center">
+        {sweep !== null ? (
+          <span className="font-mono text-3xl font-black tabular-nums text-slate-200">{sweep.toFixed(2)}</span>
+        ) : last ? (
+          <span className={`font-mono text-3xl font-black tabular-nums ${
+            last.win ? "text-accent drop-shadow-[0_0_14px_rgba(74,222,128,0.5)]" : "text-red-400"}`}>
+            {last.roll}
+          </span>
+        ) : (
+          <span className="font-mono text-3xl font-black text-slate-600">—</span>
         )}
       </div>
 
       {last && (
-        <div className={`mt-3 rounded-lg px-3 py-2 font-mono text-sm font-bold ${
+        <div className={`rounded-lg px-3 py-2 font-mono text-sm font-bold ${
           last.win ? "bg-accent/10 text-accent" : "bg-red-950 text-red-300"}`}>
           rolled {last.roll} — {last.win ? `WIN +${money(last.payout)}` : "lose"}
         </div>
@@ -4045,6 +4139,25 @@ function DiceGame({ onBalance, onPlayed }: {
 }
 
 // ------------------------------------------------------------------ wheel --
+// the wheel face: 20 slices per risk, laid out so no two rich slices touch
+const WHEEL_SLICES: Record<string, { seg: number; label: string; color: string }[]> = (() => {
+  const build = (dist: [number, string, string][]) => {
+    // interleave: big buckets fan out round-robin so the wheel looks mixed
+    const pools = dist.map(([n, label, color], seg) =>
+      Array.from({ length: n }, () => ({ seg, label, color })));
+    const out: { seg: number; label: string; color: string }[] = [];
+    while (out.length < 20) {
+      for (const p of pools) if (p.length && out.length < 20) out.push(p.pop()!);
+    }
+    return out;
+  };
+  return {
+    low: build([[7, "0x", "#1e293b"], [7, "1.2x", "#16a34a"], [5, "1.5x", "#0284c7"], [1, "3x", "#f0b429"]]),
+    medium: build([[12, "0x", "#1e293b"], [5, "2x", "#0284c7"], [3, "3x", "#f0b429"]]),
+    high: build([[16, "0x", "#1e293b"], [2, "4x", "#0284c7"], [1, "5x", "#7c3aed"], [1, "6x", "#f0b429"]]),
+  };
+})();
+
 function WheelGame({ onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
@@ -4053,48 +4166,96 @@ function WheelGame({ onBalance, onPlayed }: {
   const [last, setLast] = useState<Awaited<ReturnType<typeof api.wheelBet>> | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rot, setRot] = useState(0);
+  const [rolling, setRolling] = useState(false);
 
-  const SEGMENTS: Record<string, [string, string][]> = {
-    low: [["", "0x"], ["", "1.2x"], ["", "1.5x"], ["", "3x"]],
-    medium: [["", "0x"], ["", "2x"], ["", "3x"]],
-    high: [["", "0x"], ["", "4x"], ["", "5x"], ["", "6x"]],
-  };
+  const slices = WHEEL_SLICES[risk];
+  const SLICE = 360 / slices.length;
 
   async function spin() {
-    setErr(""); setBusy(true);
+    setErr(""); setBusy(true); setLast(null);
     try {
       const r = await api.wheelBet(stake, risk);
-      setLast(r); onBalance(r.balance); onPlayed();
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      // pick one of the winning segment's slices and coast onto it
+      const idxs = slices.map((s, i) => (s.seg === r.segment ? i : -1)).filter((i) => i >= 0);
+      const target = idxs[Math.floor(Math.random() * idxs.length)];
+      const targetAngle = target * SLICE + SLICE / 2;
+      setRolling(true);
+      sfx.spin();
+      const tickIv = window.setInterval(() => sfx.tick(), 200);
+      setRot((w) => {
+        const settle = (360 - targetAngle - ((w % 360) + 360) % 360 + 720) % 360;
+        return w + 4 * 360 + settle;
+      });
+      window.setTimeout(() => {
+        window.clearInterval(tickIv);
+        setRolling(false);
+        if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
+        setLast(r); onBalance(r.balance); onPlayed();
+        setBusy(false);
+      }, 3600);
+    } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
+  const rad = (d: number) => ((d - 90) * Math.PI) / 180;
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
       <h3 className="mb-1 text-sm font-bold text-slate-100">🎡 Wheel</h3>
       <p className="mb-3 text-[10px] text-slate-500">
-        Pick a risk level and spin — land a multiplier segment and get paid.
+        Pick a risk level and spin — land a multiplier slice and get paid.
       </p>
 
       <div className="mb-3 flex gap-1.5">
         {(["low", "medium", "high"] as const).map((r) => (
-          <button key={r} onClick={() => setRisk(r)}
+          <button key={r} onClick={() => { if (!busy) { setRisk(r); setLast(null); } }}
             className={`flex-1 rounded-lg py-2 text-xs font-bold capitalize ${
               risk === r ? "btn-gold text-base-900" : "bg-base-700 text-slate-300 hover:bg-base-600"}`}>
             {r}
           </button>
         ))}
       </div>
-      <div className="mb-3 flex gap-1">
-        {SEGMENTS[risk].map(([, m], i) => (
-          <div key={i} className={`flex-1 rounded-lg px-1 py-2 text-center ${
-            last && last.risk === risk && last.segment === i
-              ? "bg-gold/20 ring-1 ring-gold" : "bg-base-900"}`}>
-            <div className="font-mono text-sm font-bold text-slate-100">{m}</div>
+
+      {/* the wheel itself */}
+      <div className="mb-3 grid place-items-center rounded-xl border border-gold/20 bg-[radial-gradient(circle_at_50%_35%,#132030,#070d16_75%)] py-4">
+        <div className="relative h-52 w-52 sm:h-56 sm:w-56">
+          <div className="h-full w-full drop-shadow-[0_8px_24px_rgba(0,0,0,0.7)]"
+            style={{ transform: `rotate(${rot}deg)`,
+                     transition: rolling ? "transform 3.5s cubic-bezier(0.12, 0.68, 0.16, 1)" : "none" }}>
+            <svg viewBox="0 0 200 200" className="h-full w-full">
+              <circle cx="100" cy="100" r="99" fill="#3f2c10" />
+              <circle cx="100" cy="100" r="96" fill="none" stroke="#f0b429" strokeWidth="2.5" />
+              {slices.map((s, i) => {
+                const a0 = -SLICE / 2, a1 = SLICE / 2;
+                const x0 = 100 + 92 * Math.cos(rad(a0)), y0 = 100 + 92 * Math.sin(rad(a0));
+                const x1 = 100 + 92 * Math.cos(rad(a1)), y1 = 100 + 92 * Math.sin(rad(a1));
+                return (
+                  <g key={i} transform={`rotate(${i * SLICE} 100 100)`}>
+                    <path d={`M100 100 L${x0} ${y0} A92 92 0 0 1 ${x1} ${y1} Z`}
+                      fill={s.color} stroke="#0b0e14" strokeWidth="0.8" />
+                    <text x="100" y="22" fontSize="9" fontWeight="800" textAnchor="middle"
+                      fill={s.label === "0x" ? "#64748b" : "#f8fafc"}
+                      fontFamily="Arial, sans-serif">{s.label}</text>
+                  </g>
+                );
+              })}
+              <circle cx="100" cy="100" r="30" fill="#1c1917" stroke="#f0b429" strokeWidth="1.5" />
+              {last && !rolling ? (
+                <text x="100" y="106" fontSize="17" fontWeight="900" textAnchor="middle"
+                  fill={Number(last.payout) > 0 ? "#4ade80" : "#f87171"}
+                  fontFamily="Arial Black, sans-serif">{last.multiplier}x</text>
+              ) : (
+                <text x="100" y="106" fontSize="14" fontWeight="900" textAnchor="middle"
+                  fill="#f0b429" fontFamily="Arial Black, sans-serif">777</text>
+              )}
+            </svg>
           </div>
-        ))}
+          <svg className="pointer-events-none absolute -top-1 left-1/2 h-5 w-5 -translate-x-1/2">
+            <polygon points="0,0 20,0 10,16" fill="#f0b429" stroke="#0b0e14" strokeWidth="1" />
+          </svg>
+        </div>
       </div>
 
-      {last && (
+      {last && !rolling && (
         <div className={`rounded-lg px-3 py-2 font-mono text-sm font-bold ${
           Number(last.payout) > 0 ? "bg-accent/10 text-accent" : "bg-red-950 text-red-300"}`}>
           {Number(last.payout) > 0
