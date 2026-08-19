@@ -464,6 +464,157 @@ export function SlotScene({ kind }: { kind: SceneKind }) {
   );
 }
 
+/* ------------------------------------------------------------------------ *
+ * Bonus characters: the house mascots that come out when free games hit.
+ * Original sprites, one per machine mood — they slide in on the trigger,
+ * hover beside the reels for the whole feature, and cast on every spin.
+ * ------------------------------------------------------------------------ */
+export type CharKind = "reaper" | "buffalo" | "idol" | "cat";
+
+function ReaperSprite() {
+  return (
+    <svg viewBox="0 0 80 100" className="h-full w-full">
+      {/* wisps */}
+      <ellipse cx="20" cy="88" rx="10" ry="3.5" fill="#a78bfa" opacity="0.18" />
+      <ellipse cx="58" cy="92" rx="12" ry="4" fill="#a78bfa" opacity="0.12" />
+      {/* scythe */}
+      <path d="M60 12 C74 16 78 30 74 42 C74 28 66 20 56 19 z" fill="#cbd5e1"
+        stroke="#475569" strokeWidth="1" />
+      <rect x="57" y="16" width="3.4" height="70" rx="1.6" fill="#3f2d1d"
+        transform="rotate(6 58 16)" />
+      {/* cloak */}
+      <path d="M40 10 C24 10 16 26 17 44 C18 62 12 76 10 92
+        C18 86 22 92 28 88 C34 94 40 88 46 93 C52 88 58 94 66 88
+        C62 74 60 60 61 44 C62 26 56 10 40 10z" fill="#17102b"
+        stroke="#3b2a63" strokeWidth="1.5" />
+      {/* hood opening + face */}
+      <path d="M40 16 C30 16 25 26 26 36 C30 42 50 42 54 36 C55 26 50 16 40 16z"
+        fill="#05030c" />
+      <ellipse cx="34.5" cy="31" rx="3" ry="3.8" fill="#67e8f9" />
+      <ellipse cx="46" cy="31" rx="3" ry="3.8" fill="#67e8f9" />
+      <ellipse cx="34.5" cy="31" rx="1.2" ry="1.6" fill="#fff" opacity="0.9" />
+      <ellipse cx="46" cy="31" rx="1.2" ry="1.6" fill="#fff" opacity="0.9" />
+      {/* bony hand on the staff */}
+      <circle cx="58.5" cy="52" r="4.4" fill="#e2e8f0" stroke="#64748b" />
+    </svg>
+  );
+}
+
+function BuffaloSprite() {
+  return (
+    <svg viewBox="0 0 110 100" className="h-full w-full">
+      {/* dust */}
+      <ellipse cx="28" cy="92" rx="16" ry="4" fill="#fdba74" opacity="0.15" />
+      {/* body */}
+      <path d="M18 62 C16 42 34 30 56 32 C74 33 88 42 92 54 C96 64 92 76 84 80
+        L82 90 L74 90 L73 82 L48 82 L46 90 L38 90 L36 80 C24 78 19 72 18 62z"
+        fill="#4a2c14" stroke="#241105" strokeWidth="2" />
+      {/* hump + mane */}
+      <path d="M30 44 C30 30 48 24 60 28 C50 28 40 34 38 46z" fill="#33200a" />
+      <path d="M20 60 C22 48 30 40 42 38 C32 46 28 54 28 64z" fill="#33200a" />
+      {/* head */}
+      <path d="M84 48 C96 50 104 58 104 68 C104 78 96 84 88 83
+        C80 82 76 74 76 64 C76 56 79 50 84 48z" fill="#33200a"
+        stroke="#241105" strokeWidth="2" />
+      {/* horns */}
+      <path d="M88 52 C94 44 102 44 106 48 C100 48 96 52 94 58z" fill="#e7d8b8"
+        stroke="#9c8a63" strokeWidth="1" />
+      {/* eye + nostril */}
+      <circle cx="90" cy="62" r="2.6" fill="#fbbf24" />
+      <circle cx="90" cy="62" r="1.1" fill="#111" />
+      <ellipse cx="98" cy="74" rx="2" ry="1.4" fill="#111" opacity="0.7" />
+      {/* tail */}
+      <path d="M18 60 C10 58 8 66 12 72" fill="none" stroke="#241105"
+        strokeWidth="3" strokeLinecap="round" />
+      <circle cx="12" cy="73" r="3" fill="#33200a" />
+    </svg>
+  );
+}
+
+function IdolSprite() {
+  return (
+    <svg viewBox="0 0 90 100" className="h-full w-full">
+      {/* crest */}
+      <path d="M45 4 L58 18 L45 14 L32 18z" fill="#e7c368" stroke="#8a5a00" />
+      <path d="M20 20 L45 10 L70 20 L66 30 L24 30z" fill="#2e9e6b"
+        stroke="#14532d" strokeWidth="1.5" />
+      {/* stone head */}
+      <rect x="22" y="26" width="46" height="58" rx="8" fill="#8a949f"
+        stroke="#3f4753" strokeWidth="2" />
+      <rect x="22" y="26" width="46" height="58" rx="8" fill="none"
+        stroke="#c7cdd6" strokeWidth="0.8" opacity="0.5"
+        transform="translate(-1,-1)" />
+      {/* carved brow + nose */}
+      <path d="M28 44 h34 M45 44 v18 M38 66 h14" stroke="#3f4753"
+        strokeWidth="3.5" strokeLinecap="round" fill="none" />
+      {/* glowing eyes */}
+      <ellipse cx="35" cy="51" rx="4" ry="3" fill="#34d399" />
+      <ellipse cx="55" cy="51" rx="4" ry="3" fill="#34d399" />
+      <ellipse cx="35" cy="51" rx="1.4" ry="1.1" fill="#fff" opacity="0.9" />
+      <ellipse cx="55" cy="51" rx="1.4" ry="1.1" fill="#fff" opacity="0.9" />
+      {/* mouth slab */}
+      <rect x="36" y="72" width="18" height="6" rx="2" fill="#3f4753" />
+      {/* ear plugs */}
+      <circle cx="20" cy="52" r="5" fill="#e7c368" stroke="#8a5a00" />
+      <circle cx="70" cy="52" r="5" fill="#e7c368" stroke="#8a5a00" />
+      {/* cracks */}
+      <path d="M28 34 l6 6 M62 76 l-5 -4" stroke="#5b636f" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function CatSprite() {
+  return (
+    <svg viewBox="0 0 90 100" className="h-full w-full">
+      {/* body */}
+      <path d="M45 34 C24 34 16 52 18 70 C19 84 30 92 45 92 C60 92 71 84 72 70
+        C74 52 66 34 45 34z" fill="#f5c451" stroke="#b97b09" strokeWidth="2" />
+      {/* head */}
+      <circle cx="45" cy="26" r="17" fill="#f5c451" stroke="#b97b09" strokeWidth="2" />
+      {/* ears */}
+      <path d="M31 16 L28 4 L38 10z" fill="#f5c451" stroke="#b97b09" strokeWidth="2" />
+      <path d="M59 16 L62 4 L52 10z" fill="#f5c451" stroke="#b97b09" strokeWidth="2" />
+      <path d="M31.5 14 L30 8 L35 11z" fill="#e0506e" />
+      <path d="M58.5 14 L60 8 L55 11z" fill="#e0506e" />
+      {/* face */}
+      <circle cx="39" cy="24" r="2" fill="#1c1917" />
+      <circle cx="51" cy="24" r="2" fill="#1c1917" />
+      <path d="M43 29 q2 2 4 0" stroke="#1c1917" strokeWidth="1.6" fill="none"
+        strokeLinecap="round" />
+      <path d="M30 27 h-7 M30 30 h-6 M60 27 h7 M60 30 h6" stroke="#b97b09"
+        strokeWidth="1.2" strokeLinecap="round" />
+      {/* the waving paw (animated by parent class) */}
+      <g className="cat-paw" style={{ transformOrigin: "68px 44px" }}>
+        <path d="M66 44 C74 38 78 30 76 22 C72 20 66 24 64 32z" fill="#f5c451"
+          stroke="#b97b09" strokeWidth="2" />
+        <circle cx="74" cy="24" r="4.5" fill="#fde8b8" stroke="#b97b09" />
+      </g>
+      {/* collar + coin */}
+      <path d="M33 38 h24" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" />
+      <circle cx="45" cy="52" r="9" fill="#e7c368" stroke="#8a5a00" strokeWidth="1.5" />
+      <text x="45" y="56" textAnchor="middle" fontSize="9" fontWeight="900"
+        fontFamily="Arial Black, sans-serif" fill="#8a5a00">$</text>
+      {/* belly */}
+      <ellipse cx="45" cy="74" rx="13" ry="11" fill="#fde8b8" />
+    </svg>
+  );
+}
+
+/** the mascot that owns the feature: slides in, bobs, casts while spinning */
+export function BonusCharacter({ kind, casting }: {
+  kind: CharKind; casting: boolean;
+}) {
+  const sprite = kind === "reaper" ? <ReaperSprite />
+    : kind === "buffalo" ? <BuffaloSprite />
+    : kind === "idol" ? <IdolSprite /> : <CatSprite />;
+  return (
+    <div className={`char-in pointer-events-none absolute right-2 top-0 z-20 h-20 w-20 drop-shadow-[0_6px_14px_rgba(0,0,0,0.65)] sm:h-24 sm:w-24 ${
+      casting ? "char-cast" : "char-bob"}`}>
+      {sprite}
+    </div>
+  );
+}
+
 /** the drawn face for a symbol id, or null when only a glyph exists */
 export function SymbolFace({ sym, size = "", stone = false }: {
   sym: string; size?: string; stone?: boolean;

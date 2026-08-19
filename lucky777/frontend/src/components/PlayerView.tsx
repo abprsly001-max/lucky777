@@ -3,7 +3,7 @@ import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import { sfx } from "../sfx";
 import Duel from "./Duel";
-import GameArt, { GameLogo, SlotScene, SYMBOL_GLYPH, SymbolFace } from "./GameArt";
+import GameArt, { BonusCharacter, GameLogo, SlotScene, SYMBOL_GLYPH, SymbolFace } from "./GameArt";
 import Sportsbook from "./Sportsbook";
 
 type Tab = "board" | "casino" | "wagers" | "figures" | "rules"
@@ -2744,13 +2744,14 @@ const VS_LINES: number[][] = [
 ];
 
 const VS_THEMES: Record<string, { bg: string; frame: string;
-  scene: import("./GameArt").SceneKind; stone?: boolean }> = {
-  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40", scene: "vault" },
-  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40", scene: "jungle", stone: true },
-  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40", scene: "candy" },
-  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40", scene: "graveyard", stone: true },
-  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40", scene: "city" },
-  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40", scene: "prairie", stone: true },
+  scene: import("./GameArt").SceneKind; stone?: boolean;
+  char: import("./GameArt").CharKind }> = {
+  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40", scene: "vault", char: "cat" },
+  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40", scene: "jungle", stone: true, char: "idol" },
+  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40", scene: "candy", char: "cat" },
+  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40", scene: "graveyard", stone: true, char: "reaper" },
+  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40", scene: "city", char: "cat" },
+  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40", scene: "prairie", stone: true, char: "buffalo" },
 };
 
 function VSCell({ sym, hot, dim, tier, stone }: {
@@ -3045,8 +3046,14 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
           {/* the world behind the reels */}
           <SlotScene kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).scene} />
-          {/* the reel bank, behind glass */}
-          <div className="relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
+          {/* the house mascot comes out for the whole bonus */}
+          {freeLeft > 0 && (
+            <BonusCharacter kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).char}
+              casting={busy} />
+          )}
+          {/* the reel bank, behind glass — gold-lit while the bonus runs */}
+          <div className={`relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)] ${
+            freeLeft > 0 ? "ring-2 ring-gold/50 shadow-gold" : ""}`}>
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (
                 <div key={reel}
