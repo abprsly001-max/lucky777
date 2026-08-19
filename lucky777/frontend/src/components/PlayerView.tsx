@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import { sfx } from "../sfx";
@@ -3005,7 +3005,6 @@ function VSCellMini({ sym }: { sym: string }) {
 
 // -------------------------------------------------------------- roulette ----
 const RL_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-type RlBet = { kind: string; pick?: number | null; stake: string; label: string };
 
 // pocket order around a real European wheel, clockwise from the zero
 const RL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,
@@ -3049,8 +3048,10 @@ function RouletteWheelSVG() {
 function Roulette({ onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
-  const [stake, setStake] = useState("5");
-  const [bets, setBets] = useState<RlBet[]>([]);
+  const [chip, setChip] = useState(5);
+  const [placed, setPlaced] = useState<Map<string, number>>(new Map());
+  const [history, setHistory] = useState<[string, number][]>([]);
+  const [lastBets, setLastBets] = useState<Map<string, number> | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [last, setLast] = useState<{ pocket: number; color: string; payout: string } | null>(null);
@@ -3059,17 +3060,43 @@ function Roulette({ onBalance, onPlayed }: {
   const [ballDropped, setBallDropped] = useState(false);
   const [rolling, setRolling] = useState(false);
 
-  const add = (kind: string, pick: number | null, label: string) => {
+  // spot keys: "s:17" straight, "red"/"black"/"even"/"odd"/"low"/"high",
+  // "d:0..2" dozens, "c:0..2" columns — chips stack on the felt
+  const place = (key: string) => {
+    if (busy) return;
     setErr("");
-    if (bets.length >= 15) { setErr("15 bets max per spin"); return; }
-    setBets([...bets, { kind, pick, stake, label }]);
+    if (!placed.has(key) && placed.size >= 15) { setErr("15 spots max per spin"); return; }
+    sfx.chip();
+    const n = new Map(placed);
+    n.set(key, (n.get(key) ?? 0) + chip);
+    setPlaced(n);
+    setHistory([...history, [key, chip]]);
   };
-  const total = bets.reduce((a, b) => a + Number(b.stake), 0);
+  const undo = () => {
+    const h = [...history];
+    const lastMove = h.pop();
+    if (!lastMove) return;
+    const [key, amt] = lastMove;
+    const n = new Map(placed);
+    const v = (n.get(key) ?? 0) - amt;
+    if (v <= 0) n.delete(key); else n.set(key, v);
+    setPlaced(n); setHistory(h);
+  };
+  const clearAll = () => { setPlaced(new Map()); setHistory([]); };
+  const total = [...placed.values()].reduce((a, v) => a + v, 0);
+
+  const toBets = (m: Map<string, number>) =>
+    [...m.entries()].map(([key, amt]) => {
+      const [k, p] = key.split(":");
+      const kind = k === "s" ? "straight" : k === "d" ? "dozen" : k === "c" ? "column" : k;
+      return { kind, pick: p !== undefined ? Number(p) : null, stake: String(amt) };
+    });
 
   async function spin() {
     setErr(""); setBusy(true); setLast(null); setBallDropped(false);
     try {
-      const r = await api.rouletteSpin(bets.map(({ kind, pick, stake }) => ({ kind, pick, stake })));
+      const r = await api.rouletteSpin(toBets(placed));
+      setLastBets(new Map(placed));
       // the wheel turns clockwise, the ball whips the other way; both
       // decelerate so the winning pocket meets the ball at 12 o'clock
       const idx = RL_ORDER.indexOf(r.pocket);
@@ -3087,26 +3114,53 @@ function Roulette({ onBalance, onPlayed }: {
         setBallDropped(true);
         setRolling(false);
         if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
-        setLast(r); onBalance(r.balance); onPlayed(); setBets([]);
+        setLast(r); onBalance(r.balance); onPlayed();
+        setPlaced(new Map()); setHistory([]);
         setBusy(false);
       }, 4100);
     } catch (e: any) { setErr(e.message); setBusy(false); }
   }
 
-  const numBtn = (n: number) => (
-    <button key={n} onClick={() => add("straight", n, `#${n}`)}
-      className={`h-9 rounded-md text-xs font-bold text-white transition hover:brightness-125 ${
-        n === 0 ? "col-span-2 bg-green-700" : RL_RED.has(n) ? "bg-red-800" : "bg-base-900 border border-white/10"}`}>
-      {n}
-    </button>
+  // a chip's face colors by its total, the way racks are stacked
+  const chipFace = (amt: number) =>
+    amt >= 100 ? "bg-neutral-900 text-gold ring-gold/80"
+    : amt >= 25 ? "bg-emerald-600 text-white ring-emerald-200/80"
+    : amt >= 10 ? "bg-sky-600 text-white ring-sky-200/80"
+    : amt >= 5 ? "bg-red-600 text-white ring-red-200/80"
+    : "bg-slate-200 text-slate-900 ring-white/90";
+
+  const Chip = ({ amt, small = false }: { amt: number; small?: boolean }) => (
+    <span className={`pointer-events-none absolute left-1/2 top-1/2 z-10 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full font-mono font-black shadow-[0_2px_5px_rgba(0,0,0,0.7)] ring-2 ring-inset ${
+      chipFace(amt)} ${small ? "h-5 w-5 text-[8px]" : "h-6 w-6 text-[9px]"}`}
+      style={{ backgroundImage: "repeating-conic-gradient(rgba(255,255,255,0.25) 0deg 12deg, transparent 12deg 48deg)" }}>
+      <span className={`grid place-items-center rounded-full ${chipFace(amt).split(" ")[0]} ${small ? "h-3.5 w-3.5" : "h-4 w-4"}`}>
+        {amt >= 1000 ? `${Math.round(amt / 1000)}k` : amt}
+      </span>
+    </span>
   );
 
-  const OUTSIDE: [string, number | null, string][] = [
-    ["red", null, "Red"], ["black", null, "Black"], ["even", null, "Even"],
-    ["odd", null, "Odd"], ["low", null, "1–18"], ["high", null, "19–36"],
-    ["dozen", 0, "1st 12"], ["dozen", 1, "2nd 12"], ["dozen", 2, "3rd 12"],
-    ["column", 0, "Col 1"], ["column", 1, "Col 2"], ["column", 2, "Col 3"],
-  ];
+  const Spot = ({ k, className, style, children }: {
+    k: string; className: string; style?: React.CSSProperties;
+    children: React.ReactNode;
+  }) => {
+    const amt = placed.get(k);
+    const isWin = last && !rolling && k === `s:${last.pocket}`;
+    return (
+      <button onClick={() => place(k)} style={style}
+        className={`relative transition hover:brightness-125 ${className} ${
+          isWin ? "z-20 ring-2 ring-gold shadow-gold" : ""}`}>
+        {children}
+        {amt ? <Chip amt={amt} /> : null}
+        {isWin && (
+          <span className="pointer-events-none absolute -top-2 left-1/2 z-30 -translate-x-1/2 text-[13px] drop-shadow">🏆</span>
+        )}
+      </button>
+    );
+  };
+
+  // the felt: 0 rail, 12x3 numbers, 2:1 rail, dozens, outside line
+  const cell = "h-9 border border-emerald-100/40 text-[11px] font-bold text-white";
+  const numCls = (n: number) => `${cell} ${RL_RED.has(n) ? "bg-red-700/90" : "bg-neutral-900/90"}`;
 
   return (
     <div className="space-y-3">
@@ -3157,42 +3211,88 @@ function Roulette({ onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className="grid grid-cols-6 gap-1">{Array.from({ length: 37 }, (_, n) => numBtn(n))}</div>
-        <div className="mt-2 grid grid-cols-3 gap-1">
-          {OUTSIDE.map(([k, pick, label]) => (
-            <button key={label} onClick={() => add(k, pick, label)}
-              className="h-8 rounded-md border border-white/10 bg-base-700/70 text-[11px] font-semibold text-slate-200 hover:border-gold/40 hover:bg-base-600">
-              {label}
-            </button>
-          ))}
+        {/* the felt */}
+        <div className="overflow-x-auto rounded-xl border border-emerald-700/60 bg-[radial-gradient(circle_at_50%_20%,#14532d,#0b3320_60%,#072415_100%)] p-3 shadow-[inset_0_2px_16px_rgba(0,0,0,0.5)]">
+          <div className="min-w-[560px]">
+            <div className="grid" style={{ gridTemplateColumns: "36px repeat(12, 1fr) 44px" }}>
+              {/* zero rail, tall against all three rows */}
+              <Spot k="s:0" className={`${cell} h-auto rounded-l-lg bg-green-700/90`}
+                style={{ gridRow: "1 / span 3", gridColumn: 1 }}>0</Spot>
+              {/* each table row: its 12 numbers, then its 2:1 box */}
+              {[3, 2, 1].map((rowStart, i) => (
+                <React.Fragment key={rowStart}>
+                  {Array.from({ length: 12 }, (_, j) => rowStart + j * 3).map((n) => (
+                    <Spot key={n} k={`s:${n}`} className={numCls(n)}>{n}</Spot>
+                  ))}
+                  <Spot k={`c:${rowStart - 1}`}
+                    className={`${cell} bg-emerald-800/70 ${i === 0 ? "rounded-tr-lg" : ""} ${i === 2 ? "rounded-br-lg" : ""}`}>
+                    2:1
+                  </Spot>
+                </React.Fragment>
+              ))}
+            </div>
+            {/* dozens */}
+            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "36px repeat(3, 1fr) 44px" }}>
+              <span />
+              {[0, 1, 2].map((d) => (
+                <Spot key={d} k={`d:${d}`} className={`${cell} bg-emerald-800/70`}>
+                  {["1st 12", "2nd 12", "3rd 12"][d]}
+                </Spot>
+              ))}
+              <span />
+            </div>
+            {/* the outside line */}
+            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "36px repeat(6, 1fr) 44px" }}>
+              <span />
+              <Spot k="low" className={`${cell} rounded-bl-lg bg-emerald-800/70`}>1–18</Spot>
+              <Spot k="even" className={`${cell} bg-emerald-800/70`}>EVEN</Spot>
+              <Spot k="red" className={`${cell} bg-red-700/90`}>◆</Spot>
+              <Spot k="black" className={`${cell} bg-neutral-900/90`}>◆</Spot>
+              <Spot k="odd" className={`${cell} bg-emerald-800/70`}>ODD</Spot>
+              <Spot k="high" className={`${cell} rounded-br-lg bg-emerald-800/70`}>19–36</Spot>
+              <span />
+            </div>
+          </div>
         </div>
 
-        <div className="mt-3 flex items-end gap-2">
-          <label className="text-xs">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Chip</span>
-            <input value={stake} onChange={(e) => setStake(e.target.value)}
-              className="w-20 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
-          </label>
-          <button onClick={spin} disabled={busy || bets.length === 0}
+        {/* the rack: pick a chip, work the table */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {[1, 5, 10, 25, 100].map((v) => (
+              <button key={v} onClick={() => setChip(v)}
+                className={`relative grid h-9 w-9 place-items-center rounded-full font-mono text-[10px] font-black shadow-[0_2px_6px_rgba(0,0,0,0.6)] ring-2 ring-inset transition ${chipFace(v)} ${
+                  chip === v ? "scale-110 outline outline-2 outline-offset-2 outline-gold" : "opacity-80 hover:opacity-100"}`}
+                style={{ backgroundImage: "repeating-conic-gradient(rgba(255,255,255,0.25) 0deg 12deg, transparent 12deg 48deg)" }}>
+                <span className={`grid h-6 w-6 place-items-center rounded-full ${chipFace(v).split(" ")[0]}`}>{v}</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={undo} disabled={busy || history.length === 0}
+            className="rounded-lg border border-white/10 bg-base-900 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-base-700 disabled:opacity-40">
+            Undo
+          </button>
+          <button onClick={clearAll} disabled={busy || placed.size === 0}
+            className="rounded-lg border border-white/10 bg-base-900 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-base-700 disabled:opacity-40">
+            Clear
+          </button>
+          {lastBets && placed.size === 0 && (
+            <button onClick={() => { setPlaced(new Map(lastBets)); setHistory([...lastBets.entries()]); sfx.chip(); }}
+              disabled={busy}
+              className="rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs font-bold text-gold hover:bg-gold/20 disabled:opacity-40">
+              Rebet
+            </button>
+          )}
+          <button onClick={spin} disabled={busy || placed.size === 0}
             className="ml-auto rounded-lg btn-gold px-8 py-2 text-sm font-black uppercase tracking-wider text-base-900 disabled:opacity-50">
             {busy ? "…" : `Spin${total ? ` (${money(total)})` : ""}`}
           </button>
         </div>
 
-        {bets.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {bets.map((b, i) => (
-              <button key={i} onClick={() => setBets(bets.filter((_, j) => j !== i))}
-                className="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 font-mono text-[10px] text-gold hover:bg-red-500/20 hover:text-red-300">
-                {b.label} · {money(b.stake)} ✕
-              </button>
-            ))}
-          </div>
-        )}
         {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
         <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-          Tap the layout to place chips, tap a chip to take it back. Straight up pays 35:1,
-          dozens/columns 2:1, even-money bets 1:1.
+          Pick a chip and tap the felt — chips stack where you drop them. Undo takes
+          the last chip back; Rebet reloads your last board. Straight up pays 35:1,
+          dozens and columns 2:1, the even-money spots 1:1.
         </p>
       </div>
     </div>
