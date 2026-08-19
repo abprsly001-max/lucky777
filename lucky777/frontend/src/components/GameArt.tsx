@@ -233,11 +233,251 @@ function FruitFace({ kind }: { kind: string }) {
   return null;
 }
 
+function SkullFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+      <defs>
+        <linearGradient id="skullg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#f1f5f9" /><stop offset="1" stopColor="#94a3b8" />
+        </linearGradient>
+      </defs>
+      <path d="M24 5c-9.4 0-16 6.6-16 15 0 5.4 2.6 9.6 6.4 12v5c0 1.7 1.3 3 3 3h13.2
+        c1.7 0 3-1.3 3-3v-5c3.8-2.4 6.4-6.6 6.4-12 0-8.4-6.6-15-16-15z"
+        fill="url(#skullg)" stroke="#334155" strokeWidth="1" />
+      <ellipse cx="17" cy="21" rx="4.6" ry="5.4" fill="#0f172a" />
+      <ellipse cx="31" cy="21" rx="4.6" ry="5.4" fill="#0f172a" />
+      <circle cx="18.2" cy="19.6" r="1.2" fill="#67e8f9" opacity="0.9" />
+      <circle cx="32.2" cy="19.6" r="1.2" fill="#67e8f9" opacity="0.9" />
+      <path d="M24 26l-2.6 5h5.2z" fill="#1e293b" />
+      {[18.5, 22.2, 25.9, 29.6].map((x, i) => (
+        <rect key={i} x={x} y="34" width="2.6" height="5.2" rx="1.1"
+          fill="#e2e8f0" stroke="#475569" strokeWidth="0.5" />
+      ))}
+    </svg>
+  );
+}
+
+function CoffinFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+      <defs>
+        <linearGradient id="cofg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#7c4a1e" /><stop offset="1" stopColor="#3b2007" />
+        </linearGradient>
+      </defs>
+      <path d="M19 4h10l6 12-4 28h-14l-4-28z" fill="url(#cofg)"
+        stroke="#1c0f04" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M19 4h5l-3.5 40h-2.5l-4-28z" fill="#fff" opacity="0.08" />
+      <rect x="22.6" y="14" width="2.8" height="14" rx="1" fill="#e7c368" />
+      <rect x="18.5" y="18" width="11" height="2.8" rx="1" fill="#e7c368" />
+    </svg>
+  );
+}
+
+function CandleFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+      <ellipse cx="24" cy="15" rx="6" ry="9" fill="#fbbf24" opacity="0.25" />
+      <path d="M24 8c2.6 3 3.8 5 3.8 7a3.8 3.8 0 1 1-7.6 0c0-2 1.2-4 3.8-7z"
+        fill="#fbbf24" />
+      <path d="M24 11.5c1.2 1.6 1.8 2.7 1.8 3.8a1.8 1.8 0 1 1-3.6 0c0-1.1.6-2.2 1.8-3.8z"
+        fill="#fff7d6" />
+      <rect x="22.9" y="18" width="2.2" height="4" fill="#78350f" />
+      <path d="M17 22h14v18a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2z" fill="#f5ead1"
+        stroke="#b8a37e" strokeWidth="1" />
+      <path d="M17 22c1.5 3 .5 5 2.5 5s1.5-3 3-3 1 4 3 4 2-4 3.5-4 .8 2.5 2 3V22z"
+        fill="#fffaf0" />
+      <rect x="17" y="22" width="3.4" height="20" fill="#fff" opacity="0.25" />
+    </svg>
+  );
+}
+
+function FlaskFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+      <rect x="21" y="5" width="6" height="6" rx="1" fill="#9aa8b8" />
+      <path d="M21 10h6v6l7 16a6 6 0 0 1-5.5 8.4h-9A6 6 0 0 1 14 32l7-16z"
+        fill="rgba(190,220,235,0.35)" stroke="#9fb6c6" strokeWidth="1.2" />
+      <path d="M17.2 28.5h13.6l3.2 7.2a4.5 4.5 0 0 1-4.2 6.3h-11.6a4.5 4.5 0 0 1-4.2-6.3z"
+        fill="#4ade80" opacity="0.85" />
+      <circle cx="21" cy="34" r="1.5" fill="#bbf7d0" opacity="0.9" />
+      <circle cx="27" cy="37.5" r="1.1" fill="#bbf7d0" opacity="0.8" />
+      <rect x="22" y="12" width="1.6" height="14" fill="#fff" opacity="0.35" />
+    </svg>
+  );
+}
+
+/* royals engraved on cracked stone tiles — the graveyard-machine look */
+export function StoneRoyal({ ch }: { ch: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
+      <defs>
+        <linearGradient id="stoneg" x1="0" y1="0" x2="0.3" y2="1">
+          <stop offset="0" stopColor="#c7cdd6" /><stop offset="0.6" stopColor="#9aa3b0" />
+          <stop offset="1" stopColor="#6d7684" />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="3" width="42" height="42" rx="5" fill="url(#stoneg)"
+        stroke="#3f4753" strokeWidth="1.4" />
+      <path d="M8 10l6 5M38 34l-6 4M40 12l-5 3" stroke="#5b636f"
+        strokeWidth="0.9" fill="none" opacity="0.8" />
+      <path d="M12 40l4-3M30 6l3 4" stroke="#5b636f" strokeWidth="0.8"
+        fill="none" opacity="0.6" />
+      <text x="24" y="36" textAnchor="middle" fontSize="30" fontWeight="700"
+        fontFamily="Georgia, 'Times New Roman', serif" fill="#3a414c">{ch}</text>
+      <text x="24" y="36" textAnchor="middle" fontSize="30" fontWeight="700"
+        fontFamily="Georgia, 'Times New Roman', serif" fill="none"
+        stroke="rgba(255,255,255,0.35)" strokeWidth="0.6"
+        transform="translate(-0.7,-0.9)">{ch}</text>
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------------ *
+ * SlotScene: the layered world behind a machine's reels — sky, celestial
+ * body, silhouettes, drifting fog, vignette. Parametric per theme.
+ * ------------------------------------------------------------------------ */
+export type SceneKind = "graveyard" | "vault" | "jungle" | "city" | "prairie" | "candy";
+
+const SCENE_COLORS: Record<SceneKind, { sky: [string, string]; orb: string;
+  sil: string; fog: string }> = {
+  graveyard: { sky: ["#123332", "#040b0b"], orb: "#dbe7e4", sil: "#03100e", fog: "#9fd8cf" },
+  vault: { sky: ["#3a2a08", "#0d0801"], orb: "#ffe9a3", sil: "#160e02", fog: "#f0d99a" },
+  jungle: { sky: ["#0d3319", "#03110a"], orb: "#fde68a", sil: "#02150c", fog: "#a7f3d0" },
+  city: { sky: ["#0f1440", "#05041a"], orb: "#f0abfc", sil: "#070325", fog: "#a5b4fc" },
+  prairie: { sky: ["#4a1d06", "#140502"], orb: "#fdba74", sil: "#1a0a03", fog: "#fdba74" },
+  candy: { sky: ["#3a0a3f", "#12021a"], orb: "#f9a8d4", sil: "#1c0522", fog: "#f0abfc" },
+};
+
+function sceneSilhouette(kind: SceneKind, c: string) {
+  switch (kind) {
+    case "graveyard":
+      return (
+        <g fill={c}>
+          {/* rolling ground */}
+          <path d="M0 96 Q40 88 80 94 T160 92 T240 96 L240 120 L0 120z" />
+          {/* dead tree */}
+          <path d="M18 96V70l-7-9 3-1 5 7v-9l-5-6 2-2 4 5V44h3v13l5-6 2 2-6 8v10l6-8 3 2-9 11v20z" />
+          {/* crypt + stones */}
+          <path d="M196 96V78h6v-4l7-6 7 6v4h6v18z" />
+          <path d="M96 96v-9a5 5 0 0 1 10 0v9zM130 96v-7a4 4 0 0 1 8 0v7zM62 96v-6a3.5 3.5 0 0 1 7 0v6z" />
+          {/* fence */}
+          {[148, 156, 164, 172, 180].map((x) => (
+            <rect key={x} x={x} y="84" width="2.4" height="12" />
+          ))}
+          <rect x="146" y="87" width="38" height="1.8" />
+        </g>
+      );
+    case "vault":
+      return (
+        <g fill={c}>
+          <path d="M0 96h240v24H0z" />
+          {[20, 60, 160, 200].map((x) => (
+            <g key={x}><rect x={x} y="58" width="10" height="38" />
+              <rect x={x - 3} y="54" width="16" height="6" rx="1" /></g>
+          ))}
+          <circle cx="120" cy="86" r="26" />
+          <circle cx="120" cy="86" r="18" fill="none" stroke="#2c1c04" strokeWidth="3" />
+        </g>
+      );
+    case "jungle":
+      return (
+        <g fill={c}>
+          <path d="M0 96h240v24H0z" />
+          <path d="M80 96l20-34 4 6 8-14 8 14 4-6 20 34z" />
+          <path d="M30 96V74m0 0c-8-8-16-9-20-8 6-6 14-5 20 0 6-5 14-6 20 0-4-1-12 0-20 8z"
+            stroke={c} strokeWidth="4" fill="none" />
+          <path d="M205 96V70m0 0c-9-9-18-10-23-9 7-7 16-6 23 0 7-6 16-7 23 0-5-1-14 0-23 9z"
+            stroke={c} strokeWidth="4" fill="none" />
+        </g>
+      );
+    case "city":
+      return (
+        <g fill={c}>
+          <path d="M0 96h240v24H0z" />
+          {[[8, 60, 22], [36, 72, 16], [58, 50, 26], [90, 66, 18], [114, 44, 24],
+            [144, 70, 20], [170, 56, 22], [198, 64, 18], [222, 52, 16]].map(([x, y, w], i) => (
+            <rect key={i} x={x} y={y} width={w} height={96 - (y as number)} />
+          ))}
+        </g>
+      );
+    case "prairie":
+      return (
+        <g fill={c}>
+          <path d="M0 96h240v24H0z" />
+          <path d="M20 96V70h30v8h12v18zM180 96V64h26v10h14v22z" />
+          <path d="M120 96V78m0 0v-8m0 8h-8v-10m8 10h8v-6" stroke={c}
+            strokeWidth="5" fill="none" strokeLinecap="round" />
+        </g>
+      );
+    case "candy":
+      return (
+        <g fill={c}>
+          <path d="M0 96 Q60 70 120 92 T240 88 L240 120 L0 120z" />
+          <circle cx="46" cy="78" r="14" />
+          <circle cx="196" cy="72" r="18" />
+        </g>
+      );
+  }
+}
+
+export function SlotScene({ kind }: { kind: SceneKind }) {
+  const c = SCENE_COLORS[kind];
+  const gid = `scene-${kind}`;
+  return (
+    <svg viewBox="0 0 240 120" preserveAspectRatio="xMidYMid slice"
+      className="pointer-events-none absolute inset-0 h-full w-full">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={c.sky[0]} /><stop offset="1" stopColor={c.sky[1]} />
+        </linearGradient>
+        <radialGradient id={`${gid}-orb`}>
+          <stop offset="0" stopColor={c.orb} stopOpacity="0.9" />
+          <stop offset="0.5" stopColor={c.orb} stopOpacity="0.25" />
+          <stop offset="1" stopColor={c.orb} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="240" height="120" fill={`url(#${gid})`} />
+      <circle cx="186" cy="26" r="30" fill={`url(#${gid}-orb)`} />
+      <circle cx="186" cy="26" r="11" fill={c.orb} opacity="0.9" />
+      {/* stars */}
+      {[[22, 14], [58, 26], [96, 10], [140, 20], [210, 52], [36, 44]].map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="0.9" fill="#fff"
+          opacity={0.25 + (i % 3) * 0.2} />
+      ))}
+      {sceneSilhouette(kind, c.sil)}
+      {/* drifting fog banks */}
+      <g className="fog-a" opacity="0.16">
+        <ellipse cx="60" cy="98" rx="70" ry="12" fill={c.fog} />
+        <ellipse cx="180" cy="104" rx="60" ry="10" fill={c.fog} />
+      </g>
+      <g className="fog-b" opacity="0.10">
+        <ellipse cx="130" cy="92" rx="80" ry="10" fill={c.fog} />
+      </g>
+      {/* vignette */}
+      <rect width="240" height="120" fill="url(#scene-vig)" />
+      <radialGradient id="scene-vig" cx="0.5" cy="0.42" r="0.75">
+        <stop offset="0.55" stopColor="#000" stopOpacity="0" />
+        <stop offset="1" stopColor="#000" stopOpacity="0.55" />
+      </radialGradient>
+    </svg>
+  );
+}
+
 /** the drawn face for a symbol id, or null when only a glyph exists */
-export function SymbolFace({ sym, size = "" }: { sym: string; size?: string }) {
+export function SymbolFace({ sym, size = "", stone = false }: {
+  sym: string; size?: string; stone?: boolean;
+}) {
   const wrap = (node: React.ReactNode) => (
     <span className={`grid h-full w-full place-items-center ${size}`}>{node}</span>
   );
+  if (stone && ["A", "K", "Q", "J"].includes(sym)) {
+    return wrap(<StoneRoyal ch={sym} />);
+  }
+  if (sym === "reaper") return wrap(<SkullFace />);
+  if (sym === "coffin") return wrap(<CoffinFace />);
+  if (sym === "candle") return wrap(<CandleFace />);
+  if (sym === "potion") return wrap(<FlaskFace />);
   if (sym === "wild") {
     return wrap(
       <span className="rounded-md bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1.5 py-1 font-sans text-[11px] font-black tracking-tight text-base-900 shadow-[0_2px_6px_rgba(0,0,0,0.5)] ring-1 ring-yellow-100/60">WILD</span>);
@@ -256,7 +496,6 @@ export function SymbolFace({ sym, size = "" }: { sym: string; size?: string }) {
   }
   if (sym === "diamond") return wrap(<GemFace from="#e0f2fe" mid="#7dd3fc" to="#0284c7" />);
   if (sym === "ring") return wrap(<GemFace from="#fce7f3" mid="#f9a8d4" to="#be185d" />);
-  if (sym === "potion") return wrap(<GemFace from="#dcfce7" mid="#4ade80" to="#15803d" />);
   if (sym === "bell") return wrap(<BellFace />);
   if (sym === "cherry") return wrap(<CherryFace />);
   if (sym === "star") return wrap(<StarFace />);

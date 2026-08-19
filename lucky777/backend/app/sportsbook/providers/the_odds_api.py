@@ -41,11 +41,25 @@ SPORT_GROUPS = {
 
 
 def _decimal_odds(price) -> Decimal:
-    """Accept decimal or American price. The two never overlap: decimal odds
-    live in (1, ~100); American prices are always <= -100 or >= 100."""
+    """GAME lines: accept decimal or American. On a game market the two never
+    overlap — decimal h2h/spread/total prices live in (1, ~100) while American
+    quotes are always <= -100 or >= 100 — so a stray American number from a
+    misbehaving book still parses. NEVER use this for outrights: see
+    _decimal_odds_outright."""
     p = Decimal(str(price))
     if p >= 100:
         return 1 + p / 100
+    if p <= -100:
+        return 1 + 100 / -p
+    return p
+
+
+def _decimal_odds_outright(price) -> Decimal:
+    """FUTURES: a positive number is a decimal price, full stop. Outright
+    longshots legitimately trade at 101.0 and beyond, and the game-line
+    heuristic would mangle a true 100-1 shot into a +101 co-favorite. Only
+    a negative number can be a stray American quote."""
+    p = Decimal(str(price))
     if p <= -100:
         return 1 + 100 / -p
     return p
@@ -273,7 +287,7 @@ class TheOddsApiProvider(OddsProvider):
                                 continue
                             for o in m.get("outcomes", []):
                                 quotes.setdefault(o["name"], []).append(
-                                    _decimal_odds(o["price"]))
+                                    _decimal_odds_outright(o["price"]))
                     if len(quotes) < 2:
                         continue
                     priced = []

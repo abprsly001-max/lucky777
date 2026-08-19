@@ -121,3 +121,15 @@ def test_extreme_prices_never_crash_the_board():
     for s in h2h.selections:
         assert s.odds >= Decimal("1.01")
         format_american(str(s.odds))    # must not raise
+
+
+def test_outright_parser_keeps_longshots_long():
+    """A futures book quotes a true 100-1 in decimal (101.0). The game-line
+    heuristic would flip it into a +101 co-favorite — the outright parser
+    must leave it alone, and still convert a stray negative American quote."""
+    from app.sportsbook.providers.the_odds_api import _decimal_odds_outright
+    assert _decimal_odds_outright(101.0) == Decimal("101.0")
+    assert _decimal_odds_outright(1001.0) == Decimal("1001.0")
+    assert _decimal_odds_outright(2.7) == Decimal("2.7")
+    assert abs(_decimal_odds_outright(-110)
+               - (1 + Decimal(100) / Decimal(110))) < Decimal("0.0001")

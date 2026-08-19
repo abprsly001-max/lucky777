@@ -360,12 +360,13 @@ export const api = {
   crashActive: () =>
     request<{ active: { round_id: number; rate: number; started_at: string;
                         stake: string } | null }>("/api/casino/crash/active"),
-  vslotSpin: (machine: string, stake: string) =>
+  vslotSpin: (machine: string, stake: string, lines = 20) =>
     request<{ round_id: number; free_spin: boolean; grid: string[][];
               line_wins: { line: number; symbol: string; count: number; pay: string }[];
-              scatters: number; mult: number; win: string;
+              scatters: number; mult: number; win: string; lines: number;
               free_spins_left: number; bonus_total: string; balance: string }>(
-      "/api/casino/vslots/spin", { method: "POST", body: JSON.stringify({ machine, stake }) }),
+      "/api/casino/vslots/spin",
+      { method: "POST", body: JSON.stringify({ machine, stake, lines }) }),
   heistSpin: (stake: string) =>
     request<HeistSpinRes>("/api/casino/heist/spin",
       { method: "POST", body: JSON.stringify({ stake }) }),

@@ -1323,6 +1323,10 @@ async def tumble_active(user: User = Depends(current_user),
 class VSlotRequest(BaseModel):
     stake: str
     machine: str
+    # play 1..20 of the fixed lines: stake spreads evenly, so the per-line
+    # bet is stake/lines and only the selected lines pay. RTP is identical
+    # on every line -- the hold doesn't move whatever the player picks.
+    lines: int = 20
     idempotency_key: str | None = None
 
 
@@ -1351,8 +1355,11 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
             raise HTTPException(409,
                 f"finish your bonus on {VS.VIDEO_SLOTS[st['machine']]['name']} first")
         out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine)
-        line_bet = open_rnd.stake_micros // 20
-        win = payout_micros(line_bet, out.total_pay * fs_conf["mult"])
+        n_lines = int(st.get("lines", 20))
+        line_bet = open_rnd.stake_micros // n_lines
+        wins_played = [w for w in out.line_wins if w["line"] < n_lines]
+        pay_units = sum(Decimal(w["pay"]) for w in wins_played)
+        win = payout_micros(line_bet, pay_units * fs_conf["mult"])
         st["spins_left"] -= 1
         st["total_win"] += win
         wallet = await ledger.wallet_for(session, user.id)
@@ -1369,17 +1376,22 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
         balance = await ledger.balance_of(session, wallet.id)
         await session.commit()
         return {"round_id": open_rnd.id, "free_spin": True,
-                "grid": out.grid, "line_wins": out.line_wins,
+                "grid": out.grid, "line_wins": wins_played,
                 "scatters": out.scatters, "mult": fs_conf["mult"],
                 "win": str(from_micros(win)), "free_spins_left": free_left,
+                "lines": n_lines,
                 "bonus_total": str(from_micros(st["total_win"])),
                 "balance": str(from_micros(balance))}
 
     # a PAID spin
+    if not 1 <= req.lines <= 20:
+        raise HTTPException(400, "lines is 1 to 20")
     stake_m = _stake_or_400(req.stake, user)
     out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine)
-    line_bet = stake_m // 20
-    win = payout_micros(line_bet, out.total_pay)
+    line_bet = stake_m // req.lines
+    wins_played = [w for w in out.line_wins if w["line"] < req.lines]
+    pay_units = sum(Decimal(w["pay"]) for w in wins_played)
+    win = payout_micros(line_bet, pay_units)
 
     rnd = CasinoRound(game="vslot", user_id=user.id, seed_pair_id=pair.id,
                       nonce=nonce, stake_micros=stake_m,
@@ -1388,6 +1400,7 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
                               else ("win" if win > 0 else "lose"),
                       payout_micros=None if out.triggered else win,
                       detail=json.dumps({"machine": req.machine,
+                                         "lines": req.lines,
                                          "spins_left": fs_conf["count"] if out.triggered else 0,
                                          "total_win": win}))
     session.add(rnd)
@@ -1401,10 +1414,11 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
     balance = await ledger.balance_of(session, wallet.id)
     await session.commit()
     return {"round_id": rnd.id, "free_spin": False,
-            "grid": out.grid, "line_wins": out.line_wins,
+            "grid": out.grid, "line_wins": wins_played,
             "scatters": out.scatters, "mult": 1,
             "win": str(from_micros(win)),
             "free_spins_left": fs_conf["count"] if out.triggered else 0,
+            "lines": req.lines,
             "bonus_total": "0",
             "balance": str(from_micros(balance))}
 

@@ -325,6 +325,20 @@
     animation: odds-down 1.4s ease-out;
   }
 
+  /* fog banks drifting across a machine's backdrop scene */
+  @keyframes fog-drift-a {
+    0% { transform: translateX(-14px); }
+    50% { transform: translateX(14px); }
+    100% { transform: translateX(-14px); }
+  }
+  @keyframes fog-drift-b {
+    0% { transform: translateX(18px); }
+    50% { transform: translateX(-18px); }
+    100% { transform: translateX(18px); }
+  }
+  .fog-a { animation: fog-drift-a 14s ease-in-out infinite; }
+  .fog-b { animation: fog-drift-b 19s ease-in-out infinite; }
+
   /* the floor moment: gold raining behind a BIG WIN banner */
   @keyframes coin-rain {
     0% { transform: translateY(-30px) rotate(0deg); opacity: 0; }

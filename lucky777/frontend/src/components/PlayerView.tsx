@@ -3,7 +3,7 @@ import { api, clearToken, type SbBet } from "../api";
 import { APP_VERSION, setOddsFmt, useOddsFmt, type OddsFmt } from "../prefs";
 import { sfx } from "../sfx";
 import Duel from "./Duel";
-import GameArt, { GameLogo, SYMBOL_GLYPH, SymbolFace } from "./GameArt";
+import GameArt, { GameLogo, SlotScene, SYMBOL_GLYPH, SymbolFace } from "./GameArt";
 import Sportsbook from "./Sportsbook";
 
 type Tab = "board" | "casino" | "wagers" | "figures" | "rules"
@@ -2687,22 +2687,23 @@ const VS_LINES: number[][] = [
   [1,1,0,1,1],[1,1,2,1,1],[0,2,0,2,0],[2,0,2,0,2],[0,2,2,2,0],
 ];
 
-const VS_THEMES: Record<string, { bg: string; frame: string }> = {
-  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40" },
-  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40" },
-  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40" },
-  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40" },
-  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40" },
-  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40" },
+const VS_THEMES: Record<string, { bg: string; frame: string;
+  scene: import("./GameArt").SceneKind; stone?: boolean }> = {
+  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40", scene: "vault" },
+  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40", scene: "jungle", stone: true },
+  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40", scene: "candy" },
+  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40", scene: "graveyard", stone: true },
+  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40", scene: "city" },
+  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40", scene: "prairie", stone: true },
 };
 
-function VSCell({ sym, hot, dim, tier }: {
-  sym: string; hot: boolean; dim: boolean; tier: number;
+function VSCell({ sym, hot, dim, tier, stone }: {
+  sym: string; hot: boolean; dim: boolean; tier: number; stone?: boolean;
 }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
   // drawn vector faces first — royals, gems, bells, fruit read like a real
   // machine; only symbols without a drawing fall back to their glyph
-  const face = SymbolFace({ sym });
+  const face = SymbolFace({ sym, stone });
   const inner = face ?? (
     <span className={`drop-shadow-[0_3px_3px_rgba(0,0,0,0.55)] ${sym === "scatter"
       ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(196,165,255,0.95))]"
@@ -2732,9 +2733,11 @@ function VSCell({ sym, hot, dim, tier }: {
 
 /* one physical reel: a spinning strip behind a 3-row window, then the
    staggered slam-stop with overshoot — the Hacksaw feel */
-function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }: {
+function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
+                  stone }: {
   reel: number; col: string[]; spinning: boolean; justStopped: boolean;
   symbols: string[]; hotCells: Set<string>; hotLine: number | null;
+  stone?: boolean;
 }) {
   void justStopped;
   // spin -> land (the finals roll down into the window and settle) -> idle
@@ -2760,7 +2763,8 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }
           <div className="vs-strip absolute inset-x-0 blur-[2px]">
             {[...strip, ...strip].map((s, j) => (
               <div key={j} className="mb-1.5 w-full">
-                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false} />
+                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false}
+                  stone={stone} />
               </div>
             ))}
           </div>
@@ -2778,7 +2782,8 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }
             onAnimationEnd={() => setPhase("idle")}>
             {[...col, ...strip.slice(0, 5)].map((s, j) => (
               <div key={j} className="mb-1.5 w-full">
-                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false} />
+                <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false}
+                  stone={stone} />
               </div>
             ))}
           </div>
@@ -2793,19 +2798,25 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine }
         {col.map((sym, row) => (
           <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
             hot={hotCells.has(`${reel}-${row}`)}
-            dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)} />
+            dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)}
+            stone={stone} />
         ))}
       </div>
     </div>
   );
 }
 
+// per-line denominations, the way the floor prices a spin: 5c a line and up
+const DENOMS = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50];
+
 function VideoSlot({ def, onBalance, onPlayed }: {
   def: { key: string; name: string; rules: string; vslot?: import("../api").VSlotDef };
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
   const vs = def.vslot!;
-  const [stake, setStake] = useState("10");
+  const [denom, setDenom] = useState(0.5);      // per line
+  const [lines, setLines] = useState(20);
+  const stake = String(Math.round(denom * lines * 100) / 100);
   const [grid, setGrid] = useState<string[][]>(
     Array.from({ length: 5 }, (_, i) => [0, 1, 2].map((r) => vs.symbols[(i + r + 2) % vs.symbols.length])));
   const [live, setLive] = useState<boolean[]>([false, false, false, false, false]);
@@ -2838,7 +2849,8 @@ function VideoSlot({ def, onBalance, onPlayed }: {
       if (r.active && `vslot:${r.active.machine}` === def.key) {
         setFreeLeft(r.active.free_spins_left);
         setBonusTotal(r.active.bonus_total);
-        setStake(String(Number(r.active.stake)));
+        setDenom(Number(r.active.stake) / 20);
+        setLines(20);
       }
     }).catch(() => {});
   }, [def.key]);
@@ -2875,7 +2887,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
     sfx.spin();
     try {
       const wasFree = freeLeft > 0;
-      const r = await api.vslotSpin(vs.machine, stake);
+      const r = await api.vslotSpin(vs.machine, stake, lines);
       const fast = turboRef.current;
       const base = fast ? 160 : 550;
       const step = fast ? 90 : 300;
@@ -2972,26 +2984,29 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className={`relative rounded-xl border bg-gradient-to-b p-3 ${
+        <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-b p-3 pt-14 ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
+          {/* the world behind the reels */}
+          <SlotScene kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).scene} />
           {/* the reel bank, behind glass */}
-          <div className="relative rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
+          <div className="relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (
                 <div key={reel}
                   className={reel === 4 && anticipate ? "vs-hot rounded-lg" : undefined}>
                   <VSReel reel={reel} col={col} spinning={live[reel]}
                     justStopped={stopped[reel]} symbols={vs.symbols}
-                    hotCells={hotCells} hotLine={hotLine} />
+                    hotCells={hotCells} hotLine={hotLine}
+                    stone={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).stone} />
                 </div>
               ))}
             </div>
           </div>
-          <div className="mt-2 flex h-6 items-center justify-center text-sm font-bold">
+          <div className="relative z-10 mt-2 flex h-6 items-center justify-center text-sm font-bold">
             {busy ? <span className="text-slate-500">…</span>
               : lastWin ? <CashMeter label="WIN" value={lastWin} big />
-              : wins.length === 0 && <span className="text-[11px] font-medium text-slate-600">20 lines · {vs.free_spins.trigger}+ scatters = {vs.free_spins.count} free spins</span>}
+              : wins.length === 0 && <span className="text-[11px] font-medium text-slate-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{lines} line{lines > 1 ? "s" : ""} · {vs.free_spins.trigger}+ scatters = {vs.free_spins.count} free spins</span>}
           </div>
           {bigWin && (
             <BigWinOverlay amount={bigWin.amount} tier={bigWin.tier}
@@ -3001,17 +3016,35 @@ function VideoSlot({ def, onBalance, onPlayed }: {
 
         {/* the machine deck: bet stepper · win meter · turbo · auto · spin */}
         <div className="mt-3 flex items-stretch gap-2">
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-base-900/70 px-2 py-1.5">
-            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, -1)))}
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-base-900/70 px-1.5 py-1.5">
+            <button onClick={() => setDenom((d) => DENOMS[Math.max(0, DENOMS.indexOf(d) - 1)])}
               disabled={busy || freeLeft > 0}
-              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">−</button>
-            <div className="w-16 text-center">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</div>
-              <div className="font-mono text-sm font-bold text-slate-100">{money(Number(stake) || 0)}</div>
+              className="grid h-8 w-7 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">−</button>
+            <div className="w-14 text-center">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Per line</div>
+              <div className="font-mono text-sm font-bold text-accent">
+                {denom < 1 ? `${Math.round(denom * 100)}¢` : money(denom)}
+              </div>
             </div>
-            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, 1)))}
+            <button onClick={() => setDenom((d) => DENOMS[Math.min(DENOMS.length - 1, DENOMS.indexOf(d) + 1)])}
               disabled={busy || freeLeft > 0}
-              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">+</button>
+              className="grid h-8 w-7 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">+</button>
+          </div>
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-base-900/70 px-1.5 py-1.5">
+            <button onClick={() => setLines((l) => Math.max(1, l - 1))}
+              disabled={busy || freeLeft > 0}
+              className="grid h-8 w-7 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">−</button>
+            <div className="w-11 text-center">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Lines</div>
+              <div className="font-mono text-sm font-bold text-slate-100">{lines}</div>
+            </div>
+            <button onClick={() => setLines((l) => Math.min(20, l + 1))}
+              disabled={busy || freeLeft > 0}
+              className="grid h-8 w-7 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">+</button>
+          </div>
+          <div className="grid place-items-center rounded-xl border border-white/10 bg-base-900/70 px-2.5">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Total</div>
+            <div className="font-mono text-sm font-bold text-slate-100">{money(Number(stake))}</div>
           </div>
 
           {freeLeft === 0 && (vs as any).buy_cost && (
@@ -3260,8 +3293,9 @@ function GrandHeist({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className="relative rounded-xl border border-gold/40 bg-gradient-to-b from-[#1c1406] via-[#0d0902] to-black p-3">
-          <div className="relative rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
+        <div className="relative overflow-hidden rounded-xl border border-gold/40 bg-gradient-to-b from-[#1c1406] via-[#0d0902] to-black p-3 pt-14">
+          <SlotScene kind="vault" />
+          <div className="relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (
                 <VSReel key={reel} reel={reel} col={col} spinning={live[reel]}
@@ -3289,11 +3323,11 @@ function GrandHeist({ def, onBalance, onPlayed }: {
               ))}
             </div>
           </div>
-          <div className="mt-2 flex h-6 items-center justify-center text-sm font-bold">
+          <div className="relative z-10 mt-2 flex h-6 items-center justify-center text-sm font-bold">
             {busy ? <span className="text-slate-500">…</span>
               : lastWin ? <CashMeter label="WIN" value={lastWin} big />
               : wins.length === 0 && (
-                <span className="text-[11px] font-medium text-slate-600">
+                <span className="text-[11px] font-medium text-slate-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                   wild multipliers every spin · {def.trigger} scatters open the vault · win up to {money(def.max_win)}×
                 </span>
               )}
