@@ -4052,6 +4052,14 @@ function Blackjack({ onBalance, onPlayed }: {
     setErr(""); setBusy(true);
     try {
       const h = await fn();
+      if (h.status === "settled") {
+        // table manners: your card hits the felt first, the dealer pauses,
+        // then turns the hole card (and draws out, one card at a time)
+        const fresh = !hand || hand.status === "settled";
+        setHand({ ...h, dealer: [h.dealer[0], "??"], dealer_total: null,
+                  outcome: null } as any);
+        await new Promise((res) => setTimeout(res, fresh ? 1300 : 800));
+      }
       setHand(h);
       if (h.balance) onBalance(h.balance);
       onPlayed();

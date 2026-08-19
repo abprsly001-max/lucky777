@@ -986,6 +986,7 @@ function LiveBoard({ events, selected, onPick, onOpen }: {
 }) {
   const [sport, setSport] = useState<string>("all");
   const [q, setQ] = useState("");
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "auto" }); }, [sport]);
   const [col1, setCol1] = useState("winner");
   const [col2, setCol2] = useState("total");
 
@@ -1592,7 +1593,10 @@ function ClassicBoard({ events, picks, onToggle, onRefresh, onContinue, onProps 
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [sport, setSport] = useState("all");
   const [visible, setVisible] = useState(80);
-  useEffect(() => { setVisible(80); }, [sport]);
+  useEffect(() => {
+    setVisible(80);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [sport]);
 
   // the board reads like a real book: marquee pro leagues first, the rest of
   // the pros next, college ball after — then soonest kickoff inside each tier

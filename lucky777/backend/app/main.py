@@ -173,7 +173,7 @@ app.include_router(sportsbook_router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "build": "2026-08-19-felt"}
+    return {"ok": True, "build": "2026-08-19-polish2"}
 
 
 # serve the built frontend if it exists (single-command production mode)
