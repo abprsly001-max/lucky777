@@ -176,35 +176,46 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <select value={preset}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "goto_live") { setLiveOnly(true); setPropsOnly(false); setPhase("board"); return; }
-                if (v === "goto_props") { setPropsOnly(true); setLiveOnly(false); setPhase("board"); return; }
-                if (v === "goto_casino") { onCasino?.(); return; }
-                if (v === "goto_horses") { onHorses?.(); return; }
-                setPreset(v as TicketType);
-              }}
-              className="rounded-lg btn-gold px-3 py-2 text-xs font-bold text-base-900 outline-none">
-              <optgroup label="Ticket type">
-                <option value="auto">Straight / Parlay</option>
-                <option value="teaser">Teaser</option>
-                <option value="if_win">If-Win</option>
-                <option value="if_action">If-Action</option>
-                <option value="reverse">Reverse</option>
-              </optgroup>
-              <optgroup label="Go to">
-                <option value="goto_live">Live Betting{anyLive ? " ●" : ""}</option>
-                <option value="goto_props">Props +</option>
-                {onHorses && <option value="goto_horses">Horses</option>}
-                {onCasino && <option value="goto_casino">Casino</option>}
-              </optgroup>
-            </select>
             <button onClick={() => setView("bets")}
               className="rounded-lg bg-base-700 px-3 py-2 text-xs hover:bg-base-600">
               My bets ({bets.length})
             </button>
           </div>
+        </div>
+
+        {/* one-tap ticket type — straight/parlay and the exotics, no menus */}
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+          {([["auto", "Straight / Parlay"], ["teaser", "Teaser"],
+             ["if_win", "If-Win"], ["if_action", "If-Action"],
+             ["reverse", "Reverse"]] as [TicketType, string][]).map(([id, label]) => (
+            <button key={id} onClick={() => setPreset(id)}
+              className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${
+                preset === id ? "btn-gold text-base-900"
+                  : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+              {label}
+            </button>
+          ))}
+          <span className="mx-0.5 my-1 w-px shrink-0 bg-white/10" />
+          <button onClick={() => { setLiveOnly(true); setPropsOnly(false); setPhase("board"); }}
+            className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-red-300 hover:bg-base-700">
+            ● Live{anyLive ? " now" : ""}
+          </button>
+          <button onClick={() => { setPropsOnly(true); setLiveOnly(false); setPhase("board"); }}
+            className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-sky-300 hover:bg-base-700">
+            Props +
+          </button>
+          {onHorses && (
+            <button onClick={() => onHorses()}
+              className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-slate-300 hover:bg-base-700">
+              🏇 Racing
+            </button>
+          )}
+          {onCasino && (
+            <button onClick={() => onCasino()}
+              className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-slate-300 hover:bg-base-700">
+              🎰 Casino
+            </button>
+          )}
         </div>
 
         {notice && (
