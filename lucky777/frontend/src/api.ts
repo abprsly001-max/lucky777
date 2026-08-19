@@ -139,6 +139,25 @@ export interface VSlotDef {
   buy_cost?: number;
 }
 
+export interface HeistDef {
+  symbols: string[];
+  pays: Record<string, Record<string, string>>;
+  trigger: number; spins: number;
+  base_mults: number[]; mults: number[];
+  max_win: string; buy_cost: number; super_cost: number; lines: number;
+}
+
+export interface HeistSpinRes {
+  round_id: number; status: string; spins_left: number;
+  stickies: Record<string, number>; stake: string; total: string;
+  grid: string[][];
+  line_wins: { line: number; symbol: string; count: number;
+               pay: string; mult: number }[];
+  new_stickies: Record<string, number>;
+  win: string; bonus: boolean; done: boolean; capped: boolean;
+  triggered: boolean; balance: string;
+}
+
 export interface HoldSpinState {
   round_id: number; status: string;
   locked: Record<string, string>; respins: number;
@@ -347,6 +366,19 @@ export const api = {
               scatters: number; mult: number; win: string;
               free_spins_left: number; bonus_total: string; balance: string }>(
       "/api/casino/vslots/spin", { method: "POST", body: JSON.stringify({ machine, stake }) }),
+  heistSpin: (stake: string) =>
+    request<HeistSpinRes>("/api/casino/heist/spin",
+      { method: "POST", body: JSON.stringify({ stake }) }),
+  heistBuy: (stake: string, tier: "bonus" | "super") =>
+    request<{ round_id: number; spins_left: number;
+              stickies: Record<string, number>; stake: string; total: string;
+              cost: string; tier: string; balance: string }>(
+      "/api/casino/heist/buy",
+      { method: "POST", body: JSON.stringify({ stake, tier }) }),
+  heistActive: () =>
+    request<{ active: { round_id: number; spins_left: number;
+              stickies: Record<string, number>; stake: string;
+              total: string } | null }>("/api/casino/heist/active"),
   holdspinSpin: (stake: string) =>
     request<HoldSpinState & { coins: Record<string, string>; win: string;
               triggered: boolean; balance: string }>(

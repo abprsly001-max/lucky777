@@ -126,6 +126,31 @@ def _tumble_entry(mn: str, mx: str) -> list[dict]:
     }]
 
 
+def _heist_entry(mn: str, mx: str) -> list[dict]:
+    from . import heist as H
+    return [{
+        "key": "heist", "name": H.NAME, "icon": "💰",
+        "category": "slots", "min": mn, "max": mx,
+        "rules": "The high-volatility flagship. Wilds carry multipliers on "
+                 "every spin; 3 scatters open the vault — 6 free spins where "
+                 "every wild LOCKS for the rest of the bonus and line wins "
+                 "multiply by the SUM of the stickies they cross. Wins cap "
+                 f"at {H.MAX_WIN_MULT}x the bet.",
+        "heist": {
+            "symbols": [k for k, _, _ in H.SYMBOLS],
+            "pays": {k: {str(n): str(v) for n, v in p.items()}
+                     for k, p in H.scaled_pays().items()},
+            "trigger": H.TRIGGER, "spins": H.BONUS_SPINS,
+            "base_mults": [v for v, _ in H.BASE_MULT],
+            "mults": [v for v, _ in H.MULT_TABLE],
+            "max_win": str(H.MAX_WIN_MULT),
+            "buy_cost": H.buy_cost_mult(False),
+            "super_cost": H.buy_cost_mult(True),
+            "lines": 20,
+        },
+    }]
+
+
 def _vslot_entries(mn: str, mx: str) -> list[dict]:
     from . import videoslots as VS
     out = []
@@ -176,7 +201,8 @@ async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
     mx = settings.max_bet_credits
     return {
-        "games": _tumble_entry(settings.min_bet_credits, mx)
+        "games": _heist_entry(settings.min_bet_credits, mx)
+                 + _tumble_entry(settings.min_bet_credits, mx)
                  + _dragon_entry(settings.min_bet_credits, mx)
                  + _holdspin_entry(settings.min_bet_credits, mx)
                  + _vslot_entries(settings.min_bet_credits, mx)
@@ -2908,3 +2934,160 @@ async def crash_active(user: User = Depends(current_user),
     return {"active": {"round_id": rnd.id, "rate": E.CRASH_RATE,
                        "started_at": started.isoformat(),
                        "stake": str(from_micros(rnd.stake_micros))}}
+
+
+# --------------------------------------------------------------- grand heist ----
+class HeistReq(BaseModel):
+    stake: str
+    idempotency_key: str | None = None
+
+
+class HeistBuyReq(BaseModel):
+    stake: str
+    tier: str = "bonus"           # bonus | super
+    idempotency_key: str | None = None
+
+
+async def _heist_open(session, user_id: int):
+    return (await session.execute(
+        select(CasinoRound).where(CasinoRound.user_id == user_id,
+                                  CasinoRound.game == "heist",
+                                  CasinoRound.status == "open"))).scalar_one_or_none()
+
+
+def _heist_public(rnd, st, extra=None):
+    out = {"round_id": rnd.id, "status": rnd.status,
+           "spins_left": st["spins_left"],
+           "stickies": st["stickies"],
+           "stake": str(from_micros(rnd.stake_micros)),
+           "total": str(from_micros(st["total"]))}
+    if extra:
+        out.update(extra)
+    return out
+
+
+@router.post("/heist/spin")
+async def heist_spin(req: HeistReq, user: User = Depends(betting_user),
+                     session: AsyncSession = Depends(get_session)):
+    """One spin of Grand Heist. With a bonus open this runs the next FREE
+    spin of the feature (sticky wilds pinned, no charge); otherwise it is a
+    paid base spin that can trigger the bonus."""
+    from . import heist as H
+    _casino_gate(user)
+    rnd = await _heist_open(session, user.id)
+    pair = await seeds.active_pair(session, user.id)
+    nonce = await seeds.consume_nonce(session, pair)
+
+    if rnd is not None:
+        # ---- bonus spin: free, stickies pinned, capped at MAX_WIN_MULT
+        st = json.loads(rnd.detail)
+        stickies = {int(k): v for k, v in st["stickies"].items()}
+        out = H.spin(pair.server_seed, pair.client_seed, nonce,
+                     stickies=stickies, bonus=True)
+        win = payout_micros(rnd.stake_micros, out.total_pay / Decimal(20))
+        cap = payout_micros(rnd.stake_micros, H.MAX_WIN_MULT)
+        capped = False
+        if st["total"] + win > cap:
+            win = max(0, cap - st["total"])
+            capped = True
+        st["spins_left"] -= 1
+        st["stickies"] = {str(k): v for k, v in out.stickies.items()}
+        st["total"] += win
+
+        wallet = await ledger.wallet_for(session, user.id)
+        house = await ledger.house_account(session)
+        await _pay(session, house, wallet, win, "heist_spin", rnd.id,
+                   f"heist:{rnd.id}:fs:{nonce}")
+        done = st["spins_left"] <= 0 or capped
+        if done:
+            rnd.status = "settled"
+            rnd.outcome = "bonus_done"
+            rnd.payout_micros = st["total"]
+            rnd.settled_at = datetime.now(timezone.utc)
+        rnd.detail = json.dumps(st)
+        balance = await ledger.balance_of(session, wallet.id)
+        await session.commit()
+        return _heist_public(rnd, st, {
+            "grid": out.grid, "line_wins": out.line_wins,
+            "new_stickies": {str(k): v for k, v in out.new_stickies.items()},
+            "win": str(from_micros(win)), "bonus": True, "done": done,
+            "capped": capped, "triggered": False,
+            "balance": str(from_micros(balance))})
+
+    # ---- base spin: paid, wilds carry one-spin multipliers
+    stake_m = _stake_or_400(req.stake, user)
+    out = H.spin(pair.server_seed, pair.client_seed, nonce)
+    win = payout_micros(stake_m, out.total_pay / Decimal(20))
+    st = {"spins_left": H.BONUS_SPINS, "stickies": {}, "total": 0}
+    rnd = CasinoRound(game="heist", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=nonce, stake_micros=stake_m,
+                      status="open" if out.triggered else "settled",
+                      outcome="feature" if out.triggered
+                              else ("win" if win > 0 else "lose"),
+                      payout_micros=None if out.triggered else win,
+                      detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    wallet, house = await _charge(session, user, stake_m, "heist_spin", rnd.id,
+                                  f"heist:{rnd.id}:place:{key}")
+    await _pay(session, house, wallet, win, "heist_spin", rnd.id,
+               f"heist:{rnd.id}:base:{key}")
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _heist_public(rnd, st, {
+        "grid": out.grid, "line_wins": out.line_wins,
+        "new_stickies": {str(k): v for k, v in out.new_stickies.items()},
+        "win": str(from_micros(win)), "bonus": False,
+        "done": not out.triggered, "capped": False,
+        "triggered": out.triggered,
+        "balance": str(from_micros(balance))})
+
+
+@router.post("/heist/buy")
+async def heist_buy(req: HeistBuyReq, user: User = Depends(betting_user),
+                    session: AsyncSession = Depends(get_session)):
+    """Buy straight into the vault. The SUPER buy opens with a hot-table
+    wild already locked in the middle of the board."""
+    from . import heist as H
+    _casino_gate(user)
+    if await _heist_open(session, user.id):
+        raise HTTPException(409, "finish your bonus first")
+    if req.tier not in ("bonus", "super"):
+        raise HTTPException(400, "tier is bonus or super")
+    stake_m = _stake_or_400(req.stake, user)
+    cost_mult = H.buy_cost_mult(req.tier == "super")
+    cost = stake_m * cost_mult
+
+    pair = await seeds.active_pair(session, user.id)
+    stickies: dict[str, int] = {}
+    if req.tier == "super":
+        nonce = await seeds.consume_nonce(session, pair)
+        stickies[str(H.SUPER_CELL)] = H.super_opening_wild(
+            pair.server_seed, pair.client_seed, nonce)
+
+    st = {"spins_left": H.BONUS_SPINS, "stickies": stickies, "total": 0}
+    rnd = CasinoRound(game="heist", user_id=user.id, seed_pair_id=pair.id,
+                      nonce=0, stake_micros=stake_m, status="open",
+                      outcome="feature_buy", detail=json.dumps(st))
+    session.add(rnd)
+    await session.flush()
+    key = req.idempotency_key or secrets.token_hex(8)
+    await _charge(session, user, cost, "heist_buy", rnd.id,
+                  f"heist:{rnd.id}:buy:{key}")
+    wallet = await ledger.wallet_for(session, user.id)
+    balance = await ledger.balance_of(session, wallet.id)
+    await session.commit()
+    return _heist_public(rnd, st, {
+        "cost": str(from_micros(cost)), "tier": req.tier,
+        "balance": str(from_micros(balance))})
+
+
+@router.get("/heist/active")
+async def heist_active(user: User = Depends(current_user),
+                       session: AsyncSession = Depends(get_session)):
+    rnd = await _heist_open(session, user.id)
+    await session.commit()
+    if rnd is None:
+        return {"active": None}
+    return {"active": _heist_public(rnd, json.loads(rnd.detail))}

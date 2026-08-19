@@ -80,14 +80,16 @@ function RoyalFace({ ch, from, to }: { ch: string; from: string; to: string }) {
 function GemFace({ from, mid, to }: { from: string; mid: string; to: string }) {
   return (
     <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
-      <polygon points="24,4 40,16 24,44 8,16" fill={to} />
-      <polygon points="24,4 40,16 24,22" fill={mid} />
+      {/* body bright so the cut reads on a dark plate; facets shade darker */}
+      <polygon points="24,4 40,16 24,44 8,16" fill={mid} />
       <polygon points="24,4 8,16 24,22" fill={from} />
-      <polygon points="8,16 24,22 24,44" fill={mid} opacity="0.85" />
+      <polygon points="24,4 40,16 24,22" fill={from} opacity="0.65" />
       <polygon points="40,16 24,22 24,44" fill={to} opacity="0.9" />
+      <polygon points="8,16 24,22 24,44" fill={to} opacity="0.55" />
       <polygon points="24,4 40,16 24,44 8,16" fill="none"
-        stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
-      <circle cx="18" cy="12" r="2.2" fill="#fff" opacity="0.85" />
+        stroke="rgba(255,255,255,0.65)" strokeWidth="1.2" />
+      <path d="M8 16h32" stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
+      <circle cx="18" cy="11" r="2.2" fill="#fff" opacity="0.9" />
     </svg>
   );
 }
@@ -426,6 +428,7 @@ type PosterSpec = {
 };
 
 export const POSTERS: Record<string, PosterSpec> = {
+  heist: { title: "Grand Heist", bg: ["#3a2a04", "#0f0a01"], ac: ["#ffe9a3", "#f0b429"], g: ["💰", "💎"], sub: "STICKY WILD VAULT · WIN UP TO 5,000×" },
   tumble: { title: "Sugar Blast", bg: ["#4a0d54", "#12031c"], ac: ["#ffd6f2", "#e879f9"], g: ["🍭", "🍉"], sub: "TUMBLE WINS" },
   dragon: { title: "Golden Dragon", bg: ["#5a0f06", "#180301"], ac: ["#ffe9a3", "#f59e0b"], g: ["🐉", "🪙"], sub: "HOLD & WIN · GRAND 2000x" },
   holdspin: { title: "Piggy Blast", bg: ["#4a1140", "#160312"], ac: ["#ffc9de", "#f472b6"], g: ["🐷", "🪙"], sub: "HOLD & SPIN" },

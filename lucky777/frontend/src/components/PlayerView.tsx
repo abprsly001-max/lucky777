@@ -498,6 +498,12 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
             {game === "bus" && <RideTheBus onBalance={onBalance} onPlayed={load} />}
             {game === "suitlink" && <SuitLink onBalance={onBalance} onPlayed={load} />}
             {game === "hcf" && <HighCardFlush onBalance={onBalance} onPlayed={load} />}
+            {game === "heist" && (() => {
+              const def = lobby?.games.find((g) => g.key === "heist");
+              return (def as any)?.heist
+                ? <GrandHeist def={(def as any).heist} onBalance={onBalance} onPlayed={load} />
+                : null;
+            })()}
             {game === "tumble" && (() => {
               const def = lobby?.games.find((g) => g.key === "tumble");
               return def?.tumble
@@ -2713,8 +2719,11 @@ function VSCell({ sym, hot, dim, tier }: {
       hot ? "vs-hot border-gold bg-gold/25"
         : dim ? `${frame} opacity-30`
         : frame}`}>
-      {/* glass gloss across the top of the plate */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46%] rounded-t-lg bg-gradient-to-b from-white/12 to-transparent" />
+      {/* glass gloss across the top of the plate. NOTE: written as one
+          arbitrary value on purpose — a bare `bg-gradient-to-b` whose from-*
+          class fails to compile INHERITS the machine frame's gradient stops
+          and paints a black band over the symbols (the /12 opacity bug) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46%] rounded-t-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.12),transparent)]" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-black/35 to-transparent" />
       {inner}
     </div>
@@ -3008,7 +3017,8 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           {freeLeft === 0 && (vs as any).buy_cost && (
             <button onClick={buyBonus} disabled={busy}
               className="rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/15 px-2.5 text-[10px] font-black uppercase leading-tight tracking-wide text-fuchsia-300 hover:bg-fuchsia-500/25 disabled:opacity-50">
-              Buy<br />Bonus<br /><span className="font-mono">{(vs as any).buy_cost}×</span>
+              Buy<br />Bonus<br />
+              <span className="font-mono">{money((Number(stake) || 0) * Number((vs as any).buy_cost))}</span>
             </button>
           )}
 
@@ -3081,6 +3091,292 @@ function VideoSlot({ def, onBalance, onPlayed }: {
             Wilds substitute for everything except scatters. Wins pay left to right
             on the 20 fixed lines. {vs.free_spins.trigger}+ scatters anywhere start{" "}
             {vs.free_spins.count} free spins with all wins at {vs.free_spins.mult}×.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ Grand Heist --
+   The flagship: base-game multiplier wilds, and a vault bonus where wilds
+   LOCK with printed multipliers and line wins multiply by the sum of the
+   stickies they cross. */
+function GrandHeist({ def, onBalance, onPlayed }: {
+  def: import("../api").HeistDef; onBalance: (b: string) => void;
+  onPlayed: () => void;
+}) {
+  const [stake, setStake] = useState("10");
+  const [grid, setGrid] = useState<string[][]>(
+    Array.from({ length: 5 }, (_, i) => [0, 1, 2].map((r) => def.symbols[(i + r + 2) % def.symbols.length])));
+  const [live, setLive] = useState<boolean[]>([false, false, false, false, false]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [wins, setWins] = useState<import("../api").HeistSpinRes["line_wins"]>([]);
+  const [hotLine, setHotLine] = useState<number | null>(null);
+  const [lastWin, setLastWin] = useState<string | null>(null);
+  const [stickies, setStickies] = useState<Record<string, number>>({});
+  const [spinsLeft, setSpinsLeft] = useState(0);
+  const [inBonus, setInBonus] = useState(false);
+  const [total, setTotal] = useState("0");
+  const [banner, setBanner] = useState<string | null>(null);
+  const [bigWin, setBigWin] = useState<{ amount: string; tier: string } | null>(null);
+  const [turbo, setTurbo] = useState(false);
+  const [showPays, setShowPays] = useState(false);
+  const turboRef = useRef(false);
+  useEffect(() => { turboRef.current = turbo; }, [turbo]);
+  const spinRef = useRef<() => void>(() => {});
+  const aliveRef = useRef(true);
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; }; }, []);
+
+  useEffect(() => {
+    api.heistActive().then((r) => {
+      if (r.active) {
+        setInBonus(true);
+        setSpinsLeft(r.active.spins_left);
+        setStickies(r.active.stickies);
+        setTotal(r.active.total);
+        setStake(String(Number(r.active.stake)));
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (wins.length === 0) { setHotLine(null); return; }
+    let i = 0;
+    setHotLine(wins[0].line);
+    const iv = window.setInterval(() => {
+      i = (i + 1) % wins.length;
+      setHotLine(wins[i].line);
+    }, 900);
+    return () => window.clearInterval(iv);
+  }, [wins]);
+
+  async function doSpin() {
+    if (!aliveRef.current || busy) return;
+    setErr(""); setBusy(true); setWins([]); setLastWin(null);
+    setBanner(null); setBigWin(null);
+    setLive([true, true, true, true, true]);
+    sfx.spin();
+    try {
+      const r = await api.heistSpin(stake);
+      const fast = turboRef.current;
+      const base = fast ? 160 : 500;
+      const step = fast ? 80 : 260;
+      [0, 1, 2, 3, 4].forEach((i) => window.setTimeout(() => {
+        if (!aliveRef.current) return;
+        setGrid((g) => { const n = g.map((c) => [...c]); n[i] = r.grid[i]; return n; });
+        setLive((l) => { const n = [...l]; n[i] = false; return n; });
+        sfx.land();
+        if (i === 4) {
+          setWins(r.line_wins);
+          setStickies(r.stickies);
+          setSpinsLeft(r.spins_left);
+          setTotal(r.total);
+          const winMult = Number(r.win) / Math.max(0.01, Number(stake));
+          if (Number(r.win) > 0) {
+            setLastWin(r.win);
+            if (winMult >= 15) {
+              setBigWin({ amount: r.win,
+                tier: winMult >= 100 ? "EPIC WIN" : winMult >= 40 ? "MEGA WIN" : "BIG WIN" });
+              sfx.bigwin();
+            } else { sfx.win(); }
+          }
+          if (r.triggered) {
+            setInBonus(true);
+            setBanner(`VAULT OPEN — ${def.spins} FREE SPINS, WILDS LOCK`);
+            sfx.bigwin();
+          }
+          if (r.bonus && r.done) {
+            setInBonus(false);
+            setStickies({});
+            setBanner(r.capped
+              ? `MAX WIN — ${money(r.total)} (${def.max_win}× cap)`
+              : `Vault cleared — ${money(r.total)}`);
+          }
+          onBalance(r.balance);
+          onPlayed();
+          setBusy(false);
+          const pause = winMult >= 15 ? 2600 : 0;
+          if ((r.bonus && !r.done) || r.triggered) {
+            window.setTimeout(() => {
+              if (aliveRef.current) spinRef.current();
+            }, (fast ? 550 : r.triggered ? 1500 : 950) + pause);
+          }
+        }
+      }, base + i * step));
+    } catch (e: any) {
+      setLive([false, false, false, false, false]);
+      setErr(e.message); setBusy(false);
+    }
+  }
+  spinRef.current = doSpin;
+
+  async function buy(tier: "bonus" | "super") {
+    if (busy) return;
+    setErr(""); setBusy(true); setBanner(null);
+    try {
+      const r = await api.heistBuy(stake, tier);
+      onBalance(r.balance);
+      setInBonus(true);
+      setSpinsLeft(r.spins_left);
+      setStickies(r.stickies);
+      setTotal("0");
+      setBanner(tier === "super"
+        ? "SUPER VAULT — a hot wild is already locked"
+        : `VAULT OPEN — ${def.spins} FREE SPINS`);
+      setBusy(false);
+      window.setTimeout(() => { if (aliveRef.current) spinRef.current(); }, 1200);
+    } catch (e: any) { setErr(e.message); setBusy(false); }
+  }
+
+  const hotCells = new Set<string>();
+  if (hotLine !== null) {
+    const w = wins.find((x) => x.line === hotLine);
+    const shape = VS_LINES[hotLine];
+    if (w && shape) for (let reel = 0; reel < w.count; reel++) hotCells.add(`${reel}-${shape[reel]}`);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+        <div className="mb-2 flex items-baseline justify-between">
+          <GameLogo k="heist" />
+          <button onClick={() => setShowPays(!showPays)}
+            className="text-[10px] font-bold text-sky-400 hover:text-sky-300">
+            {showPays ? "Hide pays" : "Paytable"}
+          </button>
+        </div>
+
+        {inBonus && (
+          <div className="mb-2 flex items-center justify-between rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-bold text-gold">
+            <span>VAULT BONUS · {spinsLeft} spins left · wilds lock</span>
+            <CashMeter label="" value={total} />
+          </div>
+        )}
+        {banner && (
+          <div className="mb-2 animate-pulse rounded-lg border border-gold/50 bg-gold/15 px-3 py-2 text-center text-sm font-black text-gold">
+            {banner}
+          </div>
+        )}
+
+        <div className="relative rounded-xl border border-gold/40 bg-gradient-to-b from-[#1c1406] via-[#0d0902] to-black p-3">
+          <div className="relative rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
+            <div className="grid grid-cols-5 gap-1.5">
+              {grid.map((col, reel) => (
+                <VSReel key={reel} reel={reel} col={col} spinning={live[reel]}
+                  justStopped={false} symbols={def.symbols}
+                  hotCells={hotCells} hotLine={hotLine} />
+              ))}
+            </div>
+            {/* sticky multiplier chips pinned over the glass */}
+            <div className="pointer-events-none absolute inset-1.5 z-20 grid grid-cols-5 gap-1.5">
+              {[0, 1, 2, 3, 4].map((reel) => (
+                <div key={reel} className="grid gap-1.5">
+                  {[0, 1, 2].map((row) => {
+                    const m = stickies[String(reel * 3 + row)];
+                    return (
+                      <div key={row} className="relative aspect-square">
+                        {m !== undefined && (
+                          <span className="absolute bottom-0.5 right-0.5 rounded-md bg-gradient-to-b from-yellow-200 via-gold to-amber-700 px-1 py-0.5 font-mono text-[10px] font-black text-base-900 shadow-[0_1px_4px_rgba(0,0,0,0.7)] ring-1 ring-yellow-100/70">
+                            ×{m}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 flex h-6 items-center justify-center text-sm font-bold">
+            {busy ? <span className="text-slate-500">…</span>
+              : lastWin ? <CashMeter label="WIN" value={lastWin} big />
+              : wins.length === 0 && (
+                <span className="text-[11px] font-medium text-slate-600">
+                  wild multipliers every spin · {def.trigger} scatters open the vault · win up to {money(def.max_win)}×
+                </span>
+              )}
+          </div>
+          {bigWin && (
+            <BigWinOverlay amount={bigWin.amount} tier={bigWin.tier}
+              onDone={() => setBigWin(null)} />
+          )}
+        </div>
+
+        <div className="mt-3 flex items-stretch gap-2">
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-base-900/70 px-2 py-1.5">
+            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, -1)))}
+              disabled={busy || inBonus}
+              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">−</button>
+            <div className="w-16 text-center">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</div>
+              <div className="font-mono text-sm font-bold text-slate-100">{money(Number(stake) || 0)}</div>
+            </div>
+            <button onClick={() => setStake(String(stepBet(Number(stake) || 1, 1)))}
+              disabled={busy || inBonus}
+              className="grid h-8 w-8 place-items-center rounded-lg bg-base-700 text-base font-black text-slate-200 hover:bg-base-600 disabled:opacity-40">+</button>
+          </div>
+
+          {!inBonus && (
+            <>
+              <button onClick={() => buy("bonus")} disabled={busy}
+                className="rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/15 px-2.5 text-[10px] font-black uppercase leading-tight tracking-wide text-fuchsia-300 hover:bg-fuchsia-500/25 disabled:opacity-50">
+                Buy<br />Bonus<br />
+                <span className="font-mono">{money((Number(stake) || 0) * def.buy_cost)}</span>
+              </button>
+              <button onClick={() => buy("super")} disabled={busy}
+                className="rounded-xl border border-gold/60 bg-gold/15 px-2.5 text-[10px] font-black uppercase leading-tight tracking-wide text-gold hover:bg-gold/25 disabled:opacity-50">
+                Super<br />Vault<br />
+                <span className="font-mono">{money((Number(stake) || 0) * def.super_cost)}</span>
+              </button>
+            </>
+          )}
+
+          <button onClick={() => setTurbo(!turbo)}
+            className={`rounded-xl border px-3 text-lg transition ${
+              turbo ? "border-gold bg-gold/20 text-gold shadow-gold"
+                : "border-white/10 bg-base-900/70 text-slate-500 hover:text-slate-300"}`}
+            title="Turbo — instant reel stops">⚡</button>
+
+          <button onClick={doSpin} disabled={busy || (inBonus && busy)}
+            className="btn-gold ml-auto grid h-16 w-16 shrink-0 place-items-center self-center rounded-full text-base-900 disabled:opacity-50"
+            title={inBonus ? `Bonus: ${spinsLeft} spins left` : "Spin"}>
+            {inBonus ? (
+              <span className="text-sm font-black">{spinsLeft}</span>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none"
+                stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                <path d="M20 3v4h-4" />
+              </svg>
+            )}
+          </button>
+        </div>
+        {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      </div>
+
+      {showPays && (
+        <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
+          <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+            Pays per line bet (bet ÷ {def.lines})
+          </h4>
+          <div className="space-y-1">
+            {Object.entries(def.pays).map(([sym, table]) => (
+              <div key={sym} className="flex items-center justify-between rounded-lg bg-base-900/50 px-3 py-1.5 text-xs">
+                <span className="flex items-center gap-2"><VSCellMini sym={sym} /></span>
+                <span className="font-mono text-slate-300">
+                  {["3", "4", "5"].map((n) => table[n] ? `${n}× = ${table[n]}` : "").filter(Boolean).join(" · ")}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-slate-500">
+            Every wild carries a multiplier ({def.base_mults.join("/")}× in the base
+            game). {def.trigger} scatters open the vault: {def.spins} free spins where
+            wilds LOCK with a multiplier up to {Math.max(...def.mults)}× and a line win
+            is multiplied by the SUM of the locked wilds it crosses. Bonus wins cap
+            at {money(def.max_win)}× the bet.
           </p>
         </div>
       )}
