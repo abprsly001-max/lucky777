@@ -45,6 +45,33 @@ async def test_fixture_futures_stock_the_board(session):
 
 
 @pytest.mark.asyncio
+async def test_dropped_sheets_suspend_and_returning_ones_reopen(session):
+    await ingest.sync_futures(session)
+    # a sheet the feed no longer carries, in a league the feed DID answer for
+    comp_id = (await session.execute(
+        select(Event.competition_id).where(
+            Event.provider_id == "outright:epl:champ"))).scalar_one()
+    ghost = Event(provider_id="outright:epl:dead-race", competition_id=comp_id,
+                  home="EPL — Old Race", away="Futures",
+                  starts_at=datetime.now(timezone.utc) + timedelta(days=90))
+    session.add(ghost); await session.flush()
+    gm = Market(event_id=ghost.id, type="outright", name="Old Race", status="open")
+    session.add(gm); await session.flush()
+    session.add(Selection(market_id=gm.id, key="x", name="X", odds_decimal="2.0"))
+    r = await ingest.sync_futures(session)
+    assert r["pruned"] >= 1
+    assert gm.status == "suspended"
+    # a live sheet knocked out by an outage heals on the next pass
+    champ = (await session.execute(
+        select(Market).join(Event, Event.id == Market.event_id)
+        .where(Event.provider_id == "outright:epl:champ",
+               Market.type == "outright"))).scalars().first()
+    champ.status = "suspended"
+    await ingest.sync_futures(session)
+    assert champ.status == "open"
+
+
+@pytest.mark.asyncio
 async def test_engines_leave_futures_alone(session):
     await ingest.sync_futures(session)
     fut = (await session.execute(

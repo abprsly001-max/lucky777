@@ -257,8 +257,14 @@ class TheOddsApiProvider(OddsProvider):
                             ev["commence_time"].replace("Z", "+00:00"))
                     except (KeyError, ValueError):
                         continue
+                    # an outright's commence_time is the SEASON start, which is
+                    # in the past for every in-season race (World Series winner
+                    # in July, Super Bowl winner in November). Those are the
+                    # liveliest futures on the board -- keep them, and float
+                    # the settle date forward so the ticket window stays open.
                     if starts <= now:
-                        continue
+                        from datetime import timedelta as _td
+                        starts = now + _td(days=180)
                     # consensus per outcome across every quoted book
                     quotes: dict[str, list[Decimal]] = {}
                     for bk in ev.get("bookmakers") or []:

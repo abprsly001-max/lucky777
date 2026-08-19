@@ -170,15 +170,43 @@ async def sync_live_odds(session: AsyncSession) -> dict:
 async def sync_futures(session: AsyncSession) -> dict:
     """Pull every outright the feed carries -- championship winners, MVP and
     award races, division winners -- and keep their prices moving. Futures
-    never touch the live engine: no kickoff, no scores, no simulator."""
+    never touch the live engine: no kickoff, no scores, no simulator.
+
+    Sheets the feed dropped (the race settled, the book pulled it) suspend
+    so nothing dead stays bettable; a sheet that comes back reopens."""
     provider = get_provider()
     if not hasattr(provider, "fetch_futures"):
         return {"futures": 0}
     events = await provider.fetch_futures()
     for pe in events:
         await upsert_event(session, pe)
+        # a returning sheet heals itself: reopen what an outage suspended
+        ev = (await session.execute(select(Event).where(
+            Event.provider_id == pe.provider_id))).scalar_one_or_none()
+        if ev is not None:
+            for mk in (await session.execute(select(Market).where(
+                    Market.event_id == ev.id, Market.type == "outright",
+                    Market.status == "suspended"))).scalars().all():
+                mk.status = "open"
+
+    # prune: only within sports the feed actually answered for this run, so
+    # one failed call can never wipe a whole board of live futures
+    pruned = 0
+    if events:
+        live_pids = {pe.provider_id for pe in events}
+        live_comps = {pe.competition.key for pe in events}
+        stale = (await session.execute(
+            select(Market).join(Event, Event.id == Market.event_id)
+            .join(Competition, Competition.id == Event.competition_id)
+            .where(Market.type == "outright", Market.status == "open",
+                   Competition.key.in_(live_comps),
+                   Event.provider_id.like("outright:%"),
+                   Event.provider_id.not_in(live_pids)))).scalars().all()
+        for mk in stale:
+            mk.status = "suspended"
+            pruned += 1
     await session.flush()
-    return {"futures": len(events)}
+    return {"futures": len(events), "pruned": pruned}
 
 
 PROPS_LEAGUES = ("baseball_mlb", "basketball_nba", "basketball_wnba",

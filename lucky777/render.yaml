@@ -34,6 +34,6 @@ services:
       - key: LUCKY777_PROPS_SYNC_HOURS
         value: "6"
       - key: LUCKY777_FUTURES_SYNC_HOURS
-        value: "24"
+        value: "6"
       - key: LUCKY777_ODDS_REGIONS
         value: "us,us2"
