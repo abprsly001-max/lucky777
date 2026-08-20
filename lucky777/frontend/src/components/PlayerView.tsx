@@ -3108,11 +3108,13 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-b p-3 pt-14 ${
+        <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-b p-3 pt-8 ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
           (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
-          {/* the world behind the reels */}
+          {/* the world behind the reels, dimmed so it reads as a backdrop and
+              never as a glare over the symbols */}
           <SlotScene kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).scene} />
+          <div className="pointer-events-none absolute inset-0 bg-black/45" />
           {/* the house mascot comes out for the whole bonus */}
           {freeLeft > 0 && (
             <BonusCharacter kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).char}
@@ -5070,6 +5072,12 @@ function WheelGame({ onBalance, onPlayed }: {
 
   const slices = WHEEL_SLICES[risk];
   const SLICE = 360 / slices.length;
+  // distinct payout tiers for the legend, in the order they appear
+  const tiers = (() => {
+    const seen = new Map<string, string>();
+    for (const s of slices) if (!seen.has(s.label)) seen.set(s.label, s.color);
+    return [...seen.entries()].map(([label, color]) => ({ label, color }));
+  })();
 
   async function spin() {
     setErr(""); setBusy(true); setLast(null);
@@ -5121,37 +5129,71 @@ function WheelGame({ onBalance, onPlayed }: {
             style={{ transform: `rotate(${rot}deg)`,
                      transition: rolling ? "transform 3.5s cubic-bezier(0.12, 0.68, 0.16, 1)" : "none" }}>
             <svg viewBox="0 0 200 200" className="h-full w-full">
-              <circle cx="100" cy="100" r="99" fill="#3f2c10" />
-              <circle cx="100" cy="100" r="96" fill="none" stroke="#f0b429" strokeWidth="2.5" />
+              {/* outer rim: dark ring with a bright gold bezel */}
+              <circle cx="100" cy="100" r="99" fill="#0b0e14" />
+              <circle cx="100" cy="100" r="97" fill="none" stroke="#3f2c10" strokeWidth="6" />
+              <circle cx="100" cy="100" r="93.5" fill="none"
+                stroke="url(#wheelrim)" strokeWidth="2.5" />
+              <defs>
+                <linearGradient id="wheelrim" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#b97b09" />
+                </linearGradient>
+              </defs>
               {slices.map((s, i) => {
                 const a0 = -SLICE / 2, a1 = SLICE / 2;
-                const x0 = 100 + 92 * Math.cos(rad(a0)), y0 = 100 + 92 * Math.sin(rad(a0));
-                const x1 = 100 + 92 * Math.cos(rad(a1)), y1 = 100 + 92 * Math.sin(rad(a1));
+                const x0 = 100 + 90 * Math.cos(rad(a0)), y0 = 100 + 90 * Math.sin(rad(a0));
+                const x1 = 100 + 90 * Math.cos(rad(a1)), y1 = 100 + 90 * Math.sin(rad(a1));
+                // alternate a faint sheen so neighbouring same-color slices read
+                const sheen = i % 2 === 0 ? 1 : 0.86;
                 return (
                   <g key={i} transform={`rotate(${i * SLICE} 100 100)`}>
-                    <path d={`M100 100 L${x0} ${y0} A92 92 0 0 1 ${x1} ${y1} Z`}
-                      fill={s.color} stroke="#0b0e14" strokeWidth="0.8" />
-                    <text x="100" y="22" fontSize="9" fontWeight="800" textAnchor="middle"
-                      fill={s.label === "0x" ? "#64748b" : "#f8fafc"}
-                      fontFamily="Arial, sans-serif">{s.label}</text>
+                    <path d={`M100 100 L${x0} ${y0} A90 90 0 0 1 ${x1} ${y1} Z`}
+                      fill={s.color} fillOpacity={sheen} stroke="#0b0e14" strokeWidth="0.7" />
+                    <text x="100" y="24" fontSize="8.5" fontWeight="900" textAnchor="middle"
+                      fill={s.label === "0x" ? "#7c8a9c" : "#ffffff"}
+                      fontFamily="Arial Black, Arial, sans-serif"
+                      style={{ paintOrder: "stroke", stroke: "rgba(0,0,0,0.45)", strokeWidth: 0.6 }}>
+                      {s.label}
+                    </text>
                   </g>
                 );
               })}
-              <circle cx="100" cy="100" r="30" fill="#1c1917" stroke="#f0b429" strokeWidth="1.5" />
+              {/* rim pegs, the way a real prize wheel is studded */}
+              {slices.map((_, i) => {
+                const a = rad(i * SLICE + SLICE / 2);
+                return <circle key={`p${i}`} cx={100 + 90 * Math.cos(a)}
+                  cy={100 + 90 * Math.sin(a)} r="1.4" fill="#ffe9a3" />;
+              })}
+              {/* hub */}
+              <circle cx="100" cy="100" r="31" fill="#0b0e14" stroke="url(#wheelrim)" strokeWidth="2.5" />
+              <circle cx="100" cy="100" r="27" fill="none" stroke="#3f2c10" strokeWidth="1" />
               {last && !rolling ? (
                 <text x="100" y="106" fontSize="17" fontWeight="900" textAnchor="middle"
                   fill={Number(last.payout) > 0 ? "#4ade80" : "#f87171"}
                   fontFamily="Arial Black, sans-serif">{last.multiplier}x</text>
               ) : (
-                <text x="100" y="106" fontSize="14" fontWeight="900" textAnchor="middle"
+                <text x="100" y="107" fontSize="15" fontWeight="900" textAnchor="middle"
                   fill="#f0b429" fontFamily="Arial Black, sans-serif">777</text>
               )}
             </svg>
           </div>
-          <svg className="pointer-events-none absolute -top-1 left-1/2 h-5 w-5 -translate-x-1/2">
+          <svg className="pointer-events-none absolute -top-1 left-1/2 h-5 w-5 -translate-x-1/2 drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]">
             <polygon points="0,0 20,0 10,16" fill="#f0b429" stroke="#0b0e14" strokeWidth="1" />
           </svg>
         </div>
+      </div>
+
+      {/* the payout legend — every tier and its colour, like a real wheel */}
+      <div className="mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+        {tiers.map((t) => (
+          <span key={t.label} className="flex items-center gap-1.5 text-[11px] font-bold">
+            <span className="h-2.5 w-2.5 rounded-sm ring-1 ring-white/20"
+              style={{ background: t.color }} />
+            <span className={t.label === "0x" ? "text-slate-500" : "text-slate-200"}>
+              {t.label === "0x" ? "Lose" : t.label}
+            </span>
+          </span>
+        ))}
       </div>
 
       {last && !rolling && (
