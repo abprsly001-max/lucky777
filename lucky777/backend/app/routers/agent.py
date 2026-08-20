@@ -42,6 +42,18 @@ _WEEKDAYS = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
              "friday": 4, "saturday": 5, "sunday": 6}
 
 
+def account_code(user_id: int) -> str:
+    """The customer's account number, e.g. RCK001. Prefix and the starting
+    number are config knobs (account_prefix / account_base) so the book can
+    be rebranded without a code change. The master agent is id 1, so with
+    base 1 the first real customer lands on 001. The id is immutable, so a
+    given account's number never changes."""
+    n = user_id - settings.account_base
+    if n < 1:
+        n = user_id
+    return f"{settings.account_prefix}{n:0{settings.account_digits}d}"
+
+
 def week_start(when: datetime | None = None) -> datetime:
     """00:00 UTC of the current betting week's first day.
 
@@ -237,7 +249,7 @@ async def list_customers(agent: User = Depends(current_admin),
         fp_wallet = await ledger.fp_wallet_for(session, u.id)
         fp_balance = await ledger.balance_of(session, fp_wallet.id)
         out.append({
-            "id": u.id, "account": f"L77{u.id:04d}", "username": u.username,
+            "id": u.id, "account": account_code(u.id), "username": u.username,
             "display_name": u.display_name, "allow_live": bool(u.allow_live),
             "active": bool(u.is_active),
             "balance": str(from_micros(balance)),
@@ -432,7 +444,7 @@ async def delete_customer(user_id: int, agent: User = Depends(current_admin),
     user.password_hash = hash_password(secrets.token_hex(24))
     user.username = f"~deleted:{user.id}:{old}"[:32]
     await session.commit()
-    return {"deleted": f"L77{user.id:04d}", "was": old}
+    return {"deleted": account_code(user.id), "was": old}
 
 
 class FreePlayRequest(BaseModel):
@@ -559,7 +571,7 @@ async def customer_profile(user_id: int, agent: User = Depends(current_admin),
     booked = await session.get(User, user.created_by) if user.created_by else None
     await session.commit()
     return {
-        "id": user.id, "account": f"L77{user.id:04d}", "username": user.username,
+        "id": user.id, "account": account_code(user.id), "username": user.username,
         "display_name": user.display_name, "notes": user.notes,
         "active": bool(user.is_active),
         "agent_id": user.created_by, "agent": booked.username if booked else "—",
@@ -644,7 +656,7 @@ async def weekly_figures(weeks_back: int = 0, agent: User = Depends(current_admi
 
         rows.append({
             "id": u.id,
-            "account": f"L77{u.id:04d}",
+            "account": account_code(u.id),
             "username": u.username,
             "active": bool(u.is_active),
             "settled": settled is not None,
@@ -879,7 +891,7 @@ async def collections(agent_q: str = "", agent: User = Depends(current_admin),
                      ("payments", payments), ("balance", balance)):
             tot[k] += v
         out.append({
-            "id": u.id, "account": f"L77{u.id:04d}", "username": u.username,
+            "id": u.id, "account": account_code(u.id), "username": u.username,
             "agent": booked_by, "active": bool(u.is_active),
             "settled_this_week": u.id in settled_current,
             "carry": str(from_micros(carry)),
@@ -929,7 +941,7 @@ async def wagers(status: str = "pending", limit: int = 100,
             .where(BetSelection.bet_id == bet.id))).all()
         out.append({
             "bet_id": bet.id, "customer": user.username,
-            "account": f"L77{user.id:04d}",
+            "account": account_code(user.id),
             "agent": agents.get(user.created_by, "house"),
             "type": bet.type, "free_play": bool(bet.is_free_play),
             "status": bet.status, "stake": str(from_micros(bet.stake_micros)),
@@ -1008,7 +1020,7 @@ async def bulk_create_customers(body: BulkCustomers,
         await session.flush()
         await ledger.wallet_for(session, user.id)
         await seeds.active_pair(session, user.id)
-        issued.append({"account": f"L77{user.id:04d}", "username": username,
+        issued.append({"account": account_code(user.id), "username": username,
                        "password": password})
         num += 1
 
@@ -1352,7 +1364,7 @@ async def closing_line_analysis(days: int = 14, agent: User = Depends(current_ad
         avg_cents = sum(d["cents"]) / len(d["cents"]) if d["cents"] else 0
         avg_pts = (sum(d["points"]) / len(d["points"])) if d["points"] else None
         out.append({
-            "id": u.id, "account": f"L77{u.id:04d}", "username": u.username,
+            "id": u.id, "account": account_code(u.id), "username": u.username,
             "points": str(round(avg_pts, 2)) if avg_pts is not None else None,
             "price": round(avg_cents, 2),
             "beat_line": d["beat"], "total_bets": total_bets,
@@ -1398,7 +1410,7 @@ async def closing_line_detail(user_id: int, days: int = 14,
             "status": bet.status,
         })
     await session.commit()
-    return {"username": user.username, "account": f"L77{user.id:04d}",
+    return {"username": user.username, "account": account_code(user.id),
             "days": days, "legs": out}
 
 
@@ -1521,7 +1533,7 @@ async def transactions(kind: str = "player", agent_q: str = "", player_q: str = 
         booked_by = admin_names.get(u.created_by) or agent.username
         if agent_q and agent_q.lower() not in booked_by.lower():
             continue
-        acct = f"L77{u.id:04d}"
+        acct = account_code(u.id)
         if player_q and player_q.lower() not in u.username.lower() \
                 and player_q.lower() not in acct.lower():
             continue
@@ -1830,7 +1842,7 @@ async def performance_report(window: str = "today", action: str = "all",
         if f["wagers"] == 0 and figure == 0:
             continue
         rows.append({
-            "id": u.id, "account": f"L77{u.id:04d}", "username": u.username,
+            "id": u.id, "account": account_code(u.id), "username": u.username,
             "agent": agents.get(u.created_by, "house"), "active": bool(u.is_active),
             "wagers": f["wagers"],
             "volume": str(from_micros(f["volume_micros"] - pending)),

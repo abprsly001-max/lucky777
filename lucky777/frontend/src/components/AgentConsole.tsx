@@ -886,7 +886,7 @@ function AddCustomer({ onErr }: { onErr: (m: string) => void }) {
   const [agents, setAgents] = useState<{ id: number; username: string }[]>([]);
 
   // bulk
-  const [bulk, setBulk] = useState({ count: "5", agent_id: "", prefix: "L77",
+  const [bulk, setBulk] = useState({ count: "5", agent_id: "", prefix: "RCK",
                                      start: "", credit_limit: "500", wager_limit: "500" });
   const [issued, setIssued] = useState<{ account: string; username: string; password: string }[]>([]);
   const [issuedUnder, setIssuedUnder] = useState("");

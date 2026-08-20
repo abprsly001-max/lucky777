@@ -10,6 +10,13 @@ class Settings(BaseSettings):
 
     signup_bonus_credits: str = "1000"
 
+    # customer account numbers: <prefix><zero-padded number>, e.g. RCK001.
+    # base is subtracted from the internal id so the first real customer
+    # (id 2, after the master agent at id 1) reads 001.
+    account_prefix: str = "RCK"
+    account_base: int = 1
+    account_digits: int = 3
+
     # ---- First-boot bootstrap for hosts without a shell (Render, Railway...).
     # Set both and the master agent is created on startup if it doesn't exist;
     # leave them empty and nothing is created (use `python -m app.cli`).
