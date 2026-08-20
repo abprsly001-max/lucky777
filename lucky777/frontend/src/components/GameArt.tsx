@@ -615,6 +615,155 @@ export function BonusCharacter({ kind, casting }: {
   );
 }
 
+// ---- theme premium symbols: compact original vector art per machine mood
+function MaskFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+      <path d="M24 4c10 0 15 6 15 16 0 12-7 24-15 24S9 32 9 20C9 10 14 4 24 4z"
+        fill="#e7c368" stroke="#8a5a00" strokeWidth="1.5" />
+      <path d="M24 4c6 0 9 4 9 5-3 1-6 1-9 1s-6 0-9-1c0-1 3-5 9-5z" fill="#2e9e6b" />
+      <path d="M13 20l8-3 3 3-3 3z" fill="#0f3d2a" />
+      <path d="M35 20l-8-3-3 3 3 3z" fill="#0f3d2a" />
+      <ellipse cx="17.5" cy="20" rx="2.4" ry="3" fill="#111" />
+      <ellipse cx="30.5" cy="20" rx="2.4" ry="3" fill="#111" />
+      <path d="M18 32c3 3 9 3 12 0" stroke="#8a1a1a" strokeWidth="2.4"
+        fill="none" strokeLinecap="round" />
+      <path d="M20 12h8M22 40l2 3 2-3" stroke="#8a5a00" strokeWidth="1.4" fill="none" />
+    </svg>
+  );
+}
+function JaguarFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <path d="M10 14l6 4h16l6-4-2 8 3 6-5 3-3 8H17l-3-8-5-3 3-6z"
+        fill="#e0913a" stroke="#5c3410" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M14 12l4 6-6-1zM34 12l-4 6 6-1z" fill="#5c3410" />
+      <ellipse cx="18" cy="24" rx="2.6" ry="3.2" fill="#f5e6c8" />
+      <ellipse cx="30" cy="24" rx="2.6" ry="3.2" fill="#f5e6c8" />
+      <circle cx="18" cy="24" r="1.3" fill="#111" /><circle cx="30" cy="24" r="1.3" fill="#111" />
+      <path d="M22 30h4l-2 3z" fill="#3b1d06" />
+      <path d="M20 34c2 1.6 6 1.6 8 0" stroke="#3b1d06" strokeWidth="1.6" fill="none" />
+      {[[15,20],[33,20],[16,30],[32,30],[24,16]].map(([x,y],i)=>(
+        <circle key={i} cx={x} cy={y} r="1.5" fill="#3b1d06" opacity="0.7" />))}
+    </svg>
+  );
+}
+function SnakeFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <path d="M12 40c0-10 8-10 8-18 0-5-6-5-6-10 0-4 4-6 8-6"
+        fill="none" stroke="#2e9e6b" strokeWidth="6" strokeLinecap="round" />
+      <path d="M12 40c0-10 8-10 8-18 0-5-6-5-6-10 0-4 4-6 8-6"
+        fill="none" stroke="#166534" strokeWidth="2" strokeLinecap="round"
+        strokeDasharray="2 4" />
+      <path d="M22 6c4 0 7 2 7 6 0 2-1 3-3 4l-4-2z" fill="#34d399" />
+      <circle cx="27" cy="9" r="1.3" fill="#111" />
+      <path d="M29 12l4 2-4 1z" fill="#dc2626" />
+    </svg>
+  );
+}
+function BirdFace({ eagle }: { eagle?: boolean }) {
+  const body = eagle ? "#5c4326" : "#3f3f46";
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <path d="M24 12c-8 0-14 5-18 14 6-3 10-2 12 2-2 6-6 8-6 8 8 2 14-2 16-8
+        2 6 8 10 16 8 0 0-4-2-6-8 2-4 6-5 12-2-4-9-10-14-18-14z"
+        fill={body} stroke="#18181b" strokeWidth="1.2" strokeLinejoin="round" />
+      <circle cx="24" cy="16" r="6" fill={eagle ? "#f5f5f4" : "#52525b"} />
+      <circle cx="24" cy="15" r="1.8" fill="#111" />
+      <path d="M24 18l4 2-4 2-4-2z" fill="#f59e0b" />
+    </svg>
+  );
+}
+function WolfFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <path d="M10 12l6 6h16l6-6-1 10 4 4-6 2-5 8H18l-5-8-6-2 4-4z"
+        fill="#71717a" stroke="#27272a" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M13 11l4 7-6-2zM35 11l-4 7 6-2z" fill="#3f3f46" />
+      <ellipse cx="18.5" cy="23" rx="2.4" ry="3" fill="#fde68a" />
+      <ellipse cx="29.5" cy="23" rx="2.4" ry="3" fill="#fde68a" />
+      <circle cx="18.5" cy="23" r="1.1" fill="#111" /><circle cx="29.5" cy="23" r="1.1" fill="#111" />
+      <path d="M21 30h6l-3 4z" fill="#e5e7eb" />
+      <path d="M24 34v4M20 36l4-2 4 2" stroke="#27272a" strokeWidth="1.4" fill="none" />
+    </svg>
+  );
+}
+function CactusFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <rect x="20" y="14" width="8" height="30" rx="4" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
+      <path d="M20 26h-4a4 4 0 0 0-4 4v4a3 3 0 0 0 6 0v-6" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
+      <path d="M28 22h4a4 4 0 0 1 4 4v6a3 3 0 0 1-6 0v-8" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
+      <path d="M23 18v20M25 22v16" stroke="#1f5e30" strokeWidth="0.8" opacity="0.6" />
+      <path d="M24 12c1-3 3-4 3-4s-1 4 0 5" fill="#e0506e" />
+      <ellipse cx="24" cy="45" rx="10" ry="2" fill="#7c5b32" opacity="0.5" />
+    </svg>
+  );
+}
+function IdolSymFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+      <path d="M14 6h20l3 8-3 6 3 8-4 12H15L11 28l3-8-3-6z" fill="#c9a44a"
+        stroke="#6e4d10" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M18 4h12l-2 6H20z" fill="#2e9e6b" stroke="#14532d" strokeWidth="1" />
+      <path d="M17 22h6l-1 5h-4zM25 22h6l-1 5h-4z" fill="#6e4d10" />
+      <ellipse cx="20" cy="20" rx="2" ry="2.6" fill="#34d399" />
+      <ellipse cx="28" cy="20" rx="2" ry="2.6" fill="#34d399" />
+      <rect x="19" y="30" width="10" height="4" rx="1.5" fill="#6e4d10" />
+      <path d="M15 38h18" stroke="#6e4d10" strokeWidth="1.4" />
+    </svg>
+  );
+}
+function SunFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+      <defs><linearGradient id="sunsym" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#fde68a" /><stop offset="1" stopColor="#f97316" />
+      </linearGradient></defs>
+      <path d="M6 30h36v2a18 18 0 0 1-36 0z" fill="url(#sunsym)" opacity="0.55" />
+      <circle cx="24" cy="30" r="11" fill="url(#sunsym)" />
+      <path d="M8 30h5M35 30h5M24 15v4M13 20l3 3M35 20l-3 3" stroke="#fbbf24"
+        strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M14 30a10 10 0 0 1 20 0" fill="#fff4d6" opacity="0.5" />
+    </svg>
+  );
+}
+function PalmFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+      <path d="M23 22c1 8 0 16-2 22h6c-2-6-3-14-2-22z" fill="#7c5b32" stroke="#4a3410" strokeWidth="1" />
+      <path d="M24 20c-8-6-16-6-20-3 5-2 10 0 12 3-8-3-14 1-16 6 6-4 11-3 14 0-6 0-10 5-11 10 5-6 10-6 13-4 0 0 3-8 8-12z" fill="#22a05a" stroke="#14532d" strokeWidth="0.8" strokeLinejoin="round" />
+      <path d="M24 20c8-6 16-6 20-3-5-2-10 0-12 3 8-3 14 1 16 6-6-4-11-3-14 0" fill="#2eb765" stroke="#14532d" strokeWidth="0.8" />
+      <circle cx="24" cy="19" r="2.5" fill="#f59e0b" />
+    </svg>
+  );
+}
+function CassetteFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+      <rect x="6" y="12" width="36" height="24" rx="3" fill="#a855f7" stroke="#2a0a4a" strokeWidth="1.5" />
+      <rect x="10" y="16" width="28" height="9" rx="1.5" fill="#1e1030" />
+      <circle cx="18" cy="20.5" r="3" fill="#f0abfc" /><circle cx="18" cy="20.5" r="1" fill="#1e1030" />
+      <circle cx="30" cy="20.5" r="3" fill="#f0abfc" /><circle cx="30" cy="20.5" r="1" fill="#1e1030" />
+      <rect x="12" y="29" width="24" height="4" rx="1" fill="#c084fc" />
+      <path d="M14 33l3 3M34 33l-3 3" stroke="#2a0a4a" strokeWidth="1.4" />
+    </svg>
+  );
+}
+function ShadesFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+      <path d="M6 18h36" stroke="#22d3ee" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M7 18h14a2 2 0 0 1 2 2c0 6-3 9-8 9s-8-3-8-8a3 3 0 0 1 0-3z"
+        fill="#0e7490" stroke="#22d3ee" strokeWidth="1.5" />
+      <path d="M41 18H27a2 2 0 0 0-2 2c0 6 3 9 8 9s8-3 8-8a3 3 0 0 0 0-3z"
+        fill="#0e7490" stroke="#22d3ee" strokeWidth="1.5" />
+      <path d="M9 21l6 5M29 21l6 5" stroke="#67e8f9" strokeWidth="1.4" opacity="0.7" />
+    </svg>
+  );
+}
+
 /** the drawn face for a symbol id, or null when only a glyph exists */
 export function SymbolFace({ sym, size = "", stone = false }: {
   sym: string; size?: string; stone?: boolean;
@@ -653,9 +802,22 @@ export function SymbolFace({ sym, size = "", stone = false }: {
   if (sym === "scatter") return wrap(<StarFace glow />);
   if (sym === "coin") return wrap(<CoinFace />);
   if (sym === "crown") return wrap(<CrownFace />);
-  if (["lemon", "orange", "grapes", "plum", "berry", "melon"].includes(sym)) {
-    return wrap(<FruitFace kind={sym} />);
+  if (["lemon", "orange", "grapes", "grape", "plum", "berry", "melon"].includes(sym)) {
+    return wrap(<FruitFace kind={sym === "grape" ? "grapes" : sym} />);
   }
+  // theme premiums, per machine mood
+  if (sym === "mask") return wrap(<MaskFace />);
+  if (sym === "jaguar") return wrap(<JaguarFace />);
+  if (sym === "snake") return wrap(<SnakeFace />);
+  if (sym === "idol") return wrap(<IdolSymFace />);
+  if (sym === "buffalo") return wrap(<BuffaloSprite />);
+  if (sym === "eagle") return wrap(<BirdFace eagle />);
+  if (sym === "wolf") return wrap(<WolfFace />);
+  if (sym === "cactus") return wrap(<CactusFace />);
+  if (sym === "sun") return wrap(<SunFace />);
+  if (sym === "palm") return wrap(<PalmFace />);
+  if (sym === "cassette") return wrap(<CassetteFace />);
+  if (sym === "shades") return wrap(<ShadesFace />);
   return null;
 }
 

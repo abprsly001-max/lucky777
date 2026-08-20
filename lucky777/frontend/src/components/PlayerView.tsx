@@ -2830,7 +2830,7 @@ function VSCell({ sym, hot, dim, tier, stone }: {
     : "border-white/10 bg-[radial-gradient(circle_at_50%_28%,rgba(148,163,184,0.10),rgba(8,10,16,0.95)_78%)]";
   return (
     <div className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg border transition ${
-      hot ? "vs-hot border-gold bg-gold/25"
+      hot ? "win-cell border-gold bg-gold/25"
         : dim ? `${frame} opacity-30`
         : frame}`}>
       {/* glass gloss across the top of the plate. NOTE: written as one
@@ -2839,7 +2839,9 @@ function VSCell({ sym, hot, dim, tier, stone }: {
           and paints a black band over the symbols (the /12 opacity bug) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[46%] rounded-t-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.12),transparent)]" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-black/35 to-transparent" />
-      {inner}
+      {/* the flare that rings a winning symbol */}
+      {hot && <div className="win-flare pointer-events-none absolute inset-0 rounded-lg" />}
+      <div className={hot ? "win-pop relative z-10" : "relative z-10"}>{inner}</div>
     </div>
   );
 }
@@ -3121,6 +3123,27 @@ function VideoSlot({ def, onBalance, onPlayed }: {
                 </div>
               ))}
             </div>
+            {/* the winning line traced bright across the cells */}
+            {hotLine !== null && (() => {
+              const w = wins.find((x) => x.line === hotLine);
+              const shape = VS_LINES[hotLine];
+              if (!w || !shape) return null;
+              const pts = Array.from({ length: w.count }, (_, reel) => {
+                const x = (reel + 0.5) / 5 * 100;
+                const y = (shape[reel] + 0.5) / 3 * 100;
+                return `${x},${y}`;
+              }).join(" ");
+              return (
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+                  className="pointer-events-none absolute inset-1.5 z-20 h-[calc(100%-12px)] w-[calc(100%-12px)]">
+                  <polyline points={pts} fill="none" stroke="rgba(0,0,0,0.5)"
+                    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={pts} fill="none" stroke="#ffe8a3"
+                    strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+                    className="win-line-trace" />
+                </svg>
+              );
+            })()}
           </div>
           <div className="relative z-10 mt-2 flex h-6 items-center justify-center text-sm font-bold">
             {busy ? <span className="text-slate-500">…</span>
