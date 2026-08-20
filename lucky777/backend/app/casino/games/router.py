@@ -196,6 +196,34 @@ def _slot_entries(mn: str, mx: str) -> list[dict]:
     return out
 
 
+@router.get("/recent-hits")
+async def recent_hits(session: AsyncSession = Depends(get_session)):
+    """The floor's big-win ticker: real settled rounds that paid 5x the
+    stake or better, newest first, players anonymized to a first letter."""
+    from datetime import timedelta
+    since = datetime.now(timezone.utc) - timedelta(hours=48)
+    rows = (await session.execute(
+        select(CasinoRound, User.username)
+        .join(User, User.id == CasinoRound.user_id)
+        .where(CasinoRound.status == "settled",
+               CasinoRound.created_at >= since,
+               CasinoRound.stake_micros > 0,
+               CasinoRound.payout_micros.is_not(None),
+               CasinoRound.payout_micros >= CasinoRound.stake_micros * 5)
+        .order_by(CasinoRound.id.desc()).limit(14))).all()
+    out = []
+    for rnd, uname in rows:
+        mult = Decimal(rnd.payout_micros) / Decimal(rnd.stake_micros)
+        out.append({
+            "game": rnd.game,
+            "who": f"{(uname or '?')[0].upper()}***",
+            "mult": str(mult.quantize(Decimal("0.1"))),
+            "won": str(from_micros(rnd.payout_micros)),
+        })
+    await session.commit()
+    return {"hits": out}
+
+
 @router.get("/lobby")
 async def lobby():
     """Every game, its limits, and its real edge -- nothing decorative."""
@@ -557,6 +585,11 @@ async def _bj_finish(session, rnd: CasinoRound, st: dict, user_id: int,
 
 class BjDeal(BaseModel):
     stake: str
+    # side bets ride the deal: 21+3 (three-card poker on your two cards plus
+    # the dealer's upcard) and Lucky Lucky (the three-card total). They pay
+    # or lose the moment the cards land, whatever the hand does afterwards.
+    side_21p3: str | None = None
+    side_lucky: str | None = None
     idempotency_key: str | None = None
 
 
@@ -571,6 +604,17 @@ async def bj_deal(req: BjDeal, user: User = Depends(betting_user),
     if open_hand:
         raise HTTPException(409, "finish your open hand first")
     stake_m = _stake_or_400(req.stake, user)
+
+    def _side_stake(v: str | None) -> int:
+        if v is None or Decimal(v or "0") <= 0:
+            return 0
+        m = _stake_or_400(v, user)
+        if m > stake_m:
+            raise HTTPException(400, "a side bet can't exceed your main bet")
+        return m
+
+    side_21p3_m = _side_stake(req.side_21p3)
+    side_lucky_m = _side_stake(req.side_lucky)
 
     pair = await seeds.active_pair(session, user.id)
     nonce = await seeds.consume_nonce(session, pair)
@@ -588,11 +632,33 @@ async def bj_deal(req: BjDeal, user: User = Depends(betting_user),
     await _charge(session, user, stake_m, "blackjack_hand", rnd.id,
                   f"bj:{rnd.id}:place:{key}")
 
+    # side bets: charged with the deal, settled off the first three cards
+    sides: dict[str, dict] = {}
+    dealer_up = st["dealer"][0]
+    for name, side_m, judge in (("21p3", side_21p3_m, E.side_21p3),
+                                ("lucky", side_lucky_m, E.side_lucky)):
+        if side_m <= 0:
+            continue
+        await _charge(session, user, side_m, "blackjack_side", rnd.id,
+                      f"bj:{rnd.id}:side:{name}:place:{key}")
+        hand, pay = judge(st["player"], dealer_up)
+        won = payout_micros(side_m, Decimal(pay + 1)) if hand else 0
+        if won:
+            wallet_s = await ledger.wallet_for(session, user.id)
+            house_s = await ledger.house_account(session)
+            await _pay(session, house_s, wallet_s, won, "blackjack_side", rnd.id,
+                       f"bj:{rnd.id}:side:{name}:settle:{key}")
+        sides[name] = {"hand": hand, "pay": pay if hand else 0,
+                       "won": str(from_micros(won))}
+    st["sides"] = sides
+    rnd.detail = json.dumps(st)
+
     player_bj = E.best_total(st["player"]) == 21
     dealer_bj = E.best_total(st["dealer"]) == 21
     if player_bj or dealer_bj:
         await _bj_finish(session, rnd, st, user.id, natural=player_bj)
     out = _bj_public(rnd, st, rnd.status == "settled")
+    out["sides"] = sides
     wallet = await ledger.wallet_for(session, user.id)
     out["balance"] = str(from_micros(await ledger.balance_of(session, wallet.id)))
     await session.commit()

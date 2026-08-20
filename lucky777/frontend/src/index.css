@@ -339,6 +339,18 @@
   .fog-a { animation: fog-drift-a 14s ease-in-out infinite; }
   .fog-b { animation: fog-drift-b 19s ease-in-out infinite; }
 
+  /* the lobby's big-win ticker: a slow endless crawl */
+  @keyframes hits-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .hits-scroll {
+    animation: hits-scroll 30s linear infinite;
+  }
+  .hits-scroll:hover {
+    animation-play-state: paused;
+  }
+
   /* bonus mascots: enter on the trigger, hover through the feature, cast on
      every free spin */
   @keyframes char-in {

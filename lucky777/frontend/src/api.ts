@@ -554,9 +554,14 @@ export const api = {
     request<{ round_id: number; nonce: number; roll: string; risk: string;
               segment: number; multiplier: string; payout: string; balance: string }>(
       "/api/casino/wheel/bet", { method: "POST", body: JSON.stringify({ stake, risk }) }),
-  bjDeal: (stake: string) =>
-    request<BjHand>("/api/casino/blackjack/deal", {
-      method: "POST", body: JSON.stringify({ stake }) }),
+  bjDeal: (stake: string, side21p3?: string, sideLucky?: string) =>
+    request<BjHand & { sides?: Record<string, { hand: string | null;
+      pay: number; won: string }> }>("/api/casino/blackjack/deal", {
+      method: "POST", body: JSON.stringify({ stake,
+        side_21p3: side21p3 ?? null, side_lucky: sideLucky ?? null }) }),
+  casinoHits: () =>
+    request<{ hits: { game: string; who: string; mult: string; won: string }[] }>(
+      "/api/casino/recent-hits"),
   bjAction: (roundId: number, action: "hit" | "stand" | "double") =>
     request<BjHand>(`/api/casino/blackjack/${roundId}/action`, {
       method: "POST", body: JSON.stringify({ action }) }),

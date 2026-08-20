@@ -120,6 +120,66 @@ def dealer_play(deck: list[int], dealer: list[int], cursor: int) -> tuple[list[i
     return hand, cursor
 
 
+# ---- blackjack side bets: settled at the deal off the player's two cards
+# plus the dealer's upcard. Single-deck paytables, edges solved exactly by
+# enumeration (see tests): 21+3 holds 3.33%, Lucky Lucky holds 2.61%.
+
+SIDE_21P3_PAYS = {"straight_flush": 40, "trips": 30, "straight": 10, "flush": 8}
+SIDE_LUCKY_PAYS = {"678_suited": 100, "777": 50, "678": 30,
+                   "21_suited": 15, "21": 3, "20": 2, "19": 2}
+
+
+def _is_straight(ranks: list[int]) -> bool:
+    x = sorted(ranks)
+    if x == [0, 11, 12]:                    # Q-K-A plays as a straight too
+        return True
+    return x[1] == x[0] + 1 and x[2] == x[1] + 1
+
+
+def side_21p3(player: list[int], dealer_up: int) -> tuple[str | None, int]:
+    """(hand name, pay multiple) for the three-card poker side bet."""
+    cards = [player[0], player[1], dealer_up]
+    ranks = [c % 13 for c in cards]
+    suits = [c // 13 for c in cards]
+    flush = len(set(suits)) == 1
+    straight = _is_straight(ranks)
+    if len(set(ranks)) == 1:
+        return "trips", SIDE_21P3_PAYS["trips"]
+    if flush and straight:
+        return "straight_flush", SIDE_21P3_PAYS["straight_flush"]
+    if straight:
+        return "straight", SIDE_21P3_PAYS["straight"]
+    if flush:
+        return "flush", SIDE_21P3_PAYS["flush"]
+    return None, 0
+
+
+def side_lucky(player: list[int], dealer_up: int) -> tuple[str | None, int]:
+    """(hand name, pay multiple) for the three-card total side bet."""
+    cards = [player[0], player[1], dealer_up]
+    ranks = [c % 13 for c in cards]
+    suits = [c // 13 for c in cards]
+    suited = len(set(suits)) == 1
+    total = best_total(cards)
+    sevens = all(r == 6 for r in ranks)
+    s678 = sorted(ranks) == [5, 6, 7]
+    if s678 and suited:
+        return "678_suited", SIDE_LUCKY_PAYS["678_suited"]
+    if sevens:
+        return "777", SIDE_LUCKY_PAYS["777"]
+    if s678:
+        return "678", SIDE_LUCKY_PAYS["678"]
+    if total == 21 and suited:
+        return "21_suited", SIDE_LUCKY_PAYS["21_suited"]
+    if total == 21:
+        return "21", SIDE_LUCKY_PAYS["21"]
+    if total == 20:
+        return "20", SIDE_LUCKY_PAYS["20"]
+    if total == 19:
+        return "19", SIDE_LUCKY_PAYS["19"]
+    return None, 0
+
+
 def settle_blackjack(player: list[int], dealer: list[int],
                      stake_micros: int, natural: bool) -> int:
     """Total returned to the wallet. Stake here is the FULL amount staked

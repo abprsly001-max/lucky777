@@ -422,6 +422,15 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
   const [cat, setCat] = useState<"all" | "slots" | "table" | "quick">("all");
   const [mutedFlag, setMutedFlag] = useState(sfx.isMuted());
   const [game, setGame] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<{ game: string; who: string;
+    mult: string; won: string }[]>([]);
+  useEffect(() => {
+    const pull = () => api.casinoHits().then((r) => setHits(r.hits)).catch(() => {});
+    pull();
+    const t = window.setInterval(pull, 30000);
+    return () => window.clearInterval(t);
+  }, []);
 
   const load = () => {};
   useEffect(() => {
@@ -540,7 +549,22 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
     );
   }
 
-  const games = (lobby?.games ?? []).filter((g) => cat === "all" || g.category === cat);
+  const games = (lobby?.games ?? [])
+    .filter((g) => cat === "all" || g.category === cat)
+    .filter((g) => !query
+      || g.name.toLowerCase().includes(query.toLowerCase()));
+  // rounds store the engine id, not the lobby key — map the family names
+  const HIT_NAMES: Record<string, string> = {
+    vslot: "Video Slots", slot: "Slots", dragon: "Golden Dragon",
+    holdspin: "Piggy Blast", tumble: "Sugar Blast", heist: "Grand Heist",
+    blackjack: "Blackjack", dice: "Dice", wheel: "Wheel", mines: "Mines",
+    crash: "Crash", roulette: "Roulette", videopoker: "Video Poker",
+    baccarat: "Baccarat", plinko: "Plinko", keno: "Keno", limbo: "Limbo",
+    towers: "Towers", dt: "Dragon Tiger", hilo: "Hi-Lo",
+  };
+  const nameOf = (key: string) =>
+    lobby?.games.find((g) => g.key === key)?.name ?? HIT_NAMES[key]
+    ?? key.charAt(0).toUpperCase() + key.slice(1);
   return (
     <div className="mx-auto max-w-3xl space-y-3">
       {/* the marquee */}
@@ -583,6 +607,29 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
           </button>
         ))}
       </div>
+
+      {/* the floor's big-win ticker: real rounds, real payouts */}
+      {hits.length > 0 && (
+        <div className="relative overflow-hidden rounded-xl border border-white/5 bg-base-900/70 py-1.5">
+          <div className="hits-scroll flex w-max items-center gap-6 px-3">
+            {[...hits, ...hits].map((h, i) => (
+              <span key={i} className="flex shrink-0 items-center gap-1.5 text-[11px]">
+                <span className="text-gold">◆</span>
+                <span className="font-bold text-slate-300">{h.who}</span>
+                <span className="text-slate-500">hit</span>
+                <span className="font-mono font-black text-accent">{h.mult}×</span>
+                <span className="text-slate-500">on {nameOf(h.game)}</span>
+                <span className="font-mono font-bold text-slate-200">+{money(h.won)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* find a machine fast */}
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search the floor — Mines, Golden Dragon, Blackjack…"
+        className="w-full rounded-xl border border-white/5 bg-base-800 px-4 py-2.5 text-sm text-slate-100 shadow-card outline-none placeholder:text-slate-600" />
       {(cat === "all"
         ? [["🔥 Featured", games.filter((g) => LOBBY_HOT.has(g.key))],
            ["🎰 Slots", games.filter((g) => g.category === "slots" && !LOBBY_HOT.has(g.key))],
@@ -4605,8 +4652,19 @@ function Blackjack({ onBalance, onPlayed }: {
 }) {
   const [hand, setHand] = useState<import("../api").BjHand | null>(null);
   const [stake, setStake] = useState("10");
+  const [side21, setSide21] = useState("0");
+  const [sideLk, setSideLk] = useState("0");
+  const [sides, setSides] = useState<Record<string, { hand: string | null;
+    pay: number; won: string }> | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const SIDE_LABEL: Record<string, string> = {
+    straight_flush: "Straight Flush", trips: "Three of a Kind",
+    straight: "Straight", flush: "Flush", "678_suited": "6-7-8 Suited",
+    "777": "Triple Sevens", "678": "6-7-8", "21_suited": "Suited 21",
+    "21": "Total 21", "20": "Total 20", "19": "Total 19",
+  };
 
   useEffect(() => {
     api.bjActive().then((r) => { if (r.active) setHand(r.active); }).catch(() => {});
@@ -4617,6 +4675,7 @@ function Blackjack({ onBalance, onPlayed }: {
     setErr(""); setBusy(true);
     try {
       const h = await fn();
+      if ((h as any).sides !== undefined) setSides((h as any).sides);
       if (h.status === "settled") {
         // table manners: your card hits the felt first, the dealer pauses,
         // then turns the hole card (and draws out, one card at a time)
@@ -4637,6 +4696,12 @@ function Blackjack({ onBalance, onPlayed }: {
     push: ["Push — stake back", "text-slate-300"],
     lose: ["House takes it", "text-red-400"],
   };
+
+  type SideRow = [string, string, string, (v: string) => void];
+  const sideRows: SideRow[] = [
+    ["21+3", "Your 2 + dealer's up card make a poker hand", side21, setSide21],
+    ["Lucky Lucky", "The 3-card total: 19, 20, 21, 6-7-8, 777", sideLk, setSideLk],
+  ];
 
   return (
     <div className="rounded-xl border border-white/5 bg-base-800 shadow-card p-4">
@@ -4662,6 +4727,20 @@ function Blackjack({ onBalance, onPlayed }: {
             </div>
             <div className="flex gap-1.5"><DealtHand cards={hand.player} offset={2} /></div>
           </div>
+          {sides && Object.keys(sides).length > 0 && (
+            <div className="relative flex flex-wrap gap-1.5">
+              {Object.entries(sides).map(([k, s]) => (
+                <span key={k}
+                  className={`rounded-md px-2 py-1 text-[10px] font-black uppercase tracking-wide ${
+                    s.hand ? "reel-pop bg-gold/20 text-gold ring-1 ring-gold/50"
+                      : "bg-black/30 text-slate-500"}`}>
+                  {k === "21p3" ? "21+3" : "Lucky Lucky"}:{" "}
+                  {s.hand ? `${SIDE_LABEL[s.hand] ?? s.hand} ${s.pay}:1 +${money(s.won)}`
+                    : "no hit"}
+                </span>
+              ))}
+            </div>
+          )}
           {done && hand.outcome && (
             <div className={`text-sm font-bold ${OUTCOME[hand.outcome]?.[1] ?? ""}`}>
               {OUTCOME[hand.outcome]?.[0]}
@@ -4674,19 +4753,44 @@ function Blackjack({ onBalance, onPlayed }: {
       )}
 
       {(!hand || done) ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <input value={stake} inputMode="decimal"
-            onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
-            className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
-          {["5", "10", "25", "100"].map((v) => (
-            <button key={v} onClick={() => setStake(v)}
-              className="rounded-lg bg-base-700 px-2.5 py-2 text-xs text-slate-300 hover:bg-base-600">{v}</button>
-          ))}
-          <button onClick={() => run(() => api.bjDeal(stake))} disabled={busy}
-            className="ml-auto rounded-lg btn-gold px-5 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
-            {busy ? "…" : "Deal"}
-          </button>
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={stake} inputMode="decimal"
+              onChange={(e) => setStake(e.target.value.replace(/[^0-9.]/g, ""))}
+              className="w-24 rounded-lg bg-base-700 px-3 py-2 font-mono text-sm text-slate-100 outline-none" />
+            {["5", "10", "25", "100"].map((v) => (
+              <button key={v} onClick={() => setStake(v)}
+                className="rounded-lg bg-base-700 px-2.5 py-2 text-xs text-slate-300 hover:bg-base-600">{v}</button>
+            ))}
+            <button onClick={() => run(() => api.bjDeal(stake,
+                side21 !== "0" ? side21 : undefined,
+                sideLk !== "0" ? sideLk : undefined))} disabled={busy}
+              className="ml-auto rounded-lg btn-gold px-5 py-2 text-sm font-bold text-base-900 hover:brightness-110 disabled:opacity-50">
+              {busy ? "…" : "Deal"}
+            </button>
+          </div>
+          {/* side bets: settled the moment the cards land */}
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {sideRows.map(([label, hint, val, set]) => (
+              <div key={label} className="rounded-lg border border-white/10 bg-base-900/60 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wide text-gold/90">{label}</span>
+                  <div className="flex gap-1">
+                    {["0", "1", "5", "10"].map((v) => (
+                      <button key={v} onClick={() => set(v)}
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                          val === v ? "btn-gold text-base-900"
+                            : "bg-base-700 text-slate-300 hover:bg-base-600"}`}>
+                        {v === "0" ? "—" : v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="mt-1 text-[9px] leading-tight text-slate-500">{hint}</p>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="flex gap-2">
           <button onClick={() => run(() => api.bjAction(hand.round_id, "hit"))} disabled={busy}
