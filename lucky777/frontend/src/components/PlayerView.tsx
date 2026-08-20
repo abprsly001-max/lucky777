@@ -2814,34 +2814,43 @@ function VSCell({ sym, hot, dim, tier, stone }: {
   sym: string; hot: boolean; dim: boolean; tier: number; stone?: boolean;
 }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
-  // drawn vector faces first — royals, gems, bells, fruit read like a real
-  // machine; only symbols without a drawing fall back to their glyph
   const face = SymbolFace({ sym, stone });
+  const premium = sym === "wild" || sym === "scatter";
   const inner = face ?? (
-    <span className={`drop-shadow-[0_3px_3px_rgba(0,0,0,0.55)] ${sym === "scatter"
-      ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(196,165,255,0.95))]"
-      : "text-2xl sm:text-3xl"}`}>{spec.g}</span>
+    <span className={`${premium ? "text-2xl sm:text-3xl [filter:drop-shadow(0_0_10px_rgba(196,165,255,0.95))]"
+      : "text-2xl sm:text-3xl drop-shadow-[0_3px_3px_rgba(0,0,0,0.6)]"}`}>{spec.g}</span>
   );
-  // symbol plates by rarity: premiums glow warm, mids cool, royals stay quiet
-  const frame = sym === "wild" || sym === "scatter"
-    ? "border-gold/70 bg-[radial-gradient(circle_at_50%_28%,rgba(240,180,41,0.30),rgba(20,13,2,0.95)_78%)]"
-    : tier <= 2 ? "border-amber-400/45 bg-[radial-gradient(circle_at_50%_28%,rgba(245,158,11,0.22),rgba(15,10,3,0.95)_78%)]"
-    : tier <= 4 ? "border-sky-400/35 bg-[radial-gradient(circle_at_50%_28%,rgba(56,189,248,0.16),rgba(4,10,18,0.95)_78%)]"
-    : "border-white/10 bg-[radial-gradient(circle_at_50%_28%,rgba(148,163,184,0.10),rgba(8,10,16,0.95)_78%)]";
+  // the cell: a real inset machine window, not a flat icon plate. A dark
+  // glass base, a rim-lit metal edge, top gloss, a floor shadow, and a
+  // tier-tinted glow behind the symbol so premiums read hot.
+  const glow = premium ? "rgba(240,180,41,0.28)"
+    : tier <= 2 ? "rgba(245,158,11,0.20)"
+    : tier <= 4 ? "rgba(56,189,248,0.15)"
+    : "rgba(148,163,184,0.10)";
+  const rim = premium ? "rgba(240,180,41,0.55)"
+    : tier <= 2 ? "rgba(251,191,36,0.35)"
+    : tier <= 4 ? "rgba(56,189,248,0.30)" : "rgba(255,255,255,0.12)";
   return (
-    <div className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg border transition ${
-      hot ? "win-cell border-gold bg-gold/25"
-        : dim ? `${frame} opacity-30`
-        : frame}`}>
-      {/* glass gloss across the top of the plate. NOTE: written as one
-          arbitrary value on purpose — a bare `bg-gradient-to-b` whose from-*
-          class fails to compile INHERITS the machine frame's gradient stops
-          and paints a black band over the symbols (the /12 opacity bug) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[46%] rounded-t-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.12),transparent)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-black/35 to-transparent" />
+    <div className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg transition ${
+      hot ? "win-cell" : dim ? "opacity-30" : ""}`}
+      style={hot ? undefined : {
+        background:
+          `radial-gradient(circle at 50% 32%, ${glow}, transparent 70%),` +
+          "linear-gradient(160deg, #1b2230 0%, #0c111b 55%, #05080e 100%)",
+        boxShadow:
+          `inset 0 1px 0 rgba(255,255,255,0.10), inset 0 0 0 1px ${rim},` +
+          "inset 0 -8px 14px -8px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.5)",
+      }}>
+      {/* curved glass gloss on the top third */}
+      <div className="pointer-events-none absolute inset-x-1 top-0.5 h-[40%] rounded-[40%] bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent)] blur-[1px]" />
       {/* the flare that rings a winning symbol */}
       {hot && <div className="win-flare pointer-events-none absolute inset-0 rounded-lg" />}
-      <div className={hot ? "win-pop relative z-10" : "relative z-10"}>{inner}</div>
+      {/* symbol floats above the glass with a real drop shadow + soft light */}
+      <div className={`${hot ? "win-pop " : ""}relative z-10 grid h-full w-full place-items-center ${
+        premium ? "[filter:drop-shadow(0_2px_3px_rgba(0,0,0,0.7))_drop-shadow(0_0_8px_rgba(240,180,41,0.5))]"
+          : "[filter:drop-shadow(0_3px_4px_rgba(0,0,0,0.75))]"}`}>
+        {inner}
+      </div>
     </div>
   );
 }

@@ -220,7 +220,9 @@ async def list_customers(agent: User = Depends(current_admin),
                          session: AsyncSession = Depends(get_session)):
     since = week_start()
     scope = await _scope_ids(session, agent)
-    q = select(User).where(User.is_admin == 0).order_by(User.username)
+    q = (select(User).where(User.is_admin == 0,
+                            ~User.username.like("~deleted:%"))
+         .order_by(User.username))
     if scope is not None:
         q = q.where(User.id.in_(scope))
     users = (await session.execute(q)).scalars().all()
@@ -310,6 +312,84 @@ async def adjust_balance(user_id: int, body: AdjustRequest,
     await session.commit()
     return {"username": user.username, "adjusted": str(amount),
             "balance": str(from_micros(balance)), "note": body.note[:200]}
+
+
+@router.post("/customers/{user_id}/clear")
+async def clear_balance(user_id: int, agent: User = Depends(current_admin),
+                        session: AsyncSession = Depends(get_session)):
+    """Zero a customer's wallet in one move: post the exact adjustment that
+    brings the balance to 0, whichever way it's leaning. The ledger keeps
+    the full trail -- nothing is destroyed, the account just squares to even.
+    """
+    user = await session.get(User, user_id)
+    if user is None or user.is_admin:
+        raise HTTPException(404, "no such customer")
+    scope = await _scope_ids(session, agent)
+    if not _in_scope(user.id, scope):
+        raise HTTPException(403, "that customer is on another agent's sheet")
+
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    bal = await ledger.balance_of(session, wallet.id)
+    if bal != 0:
+        key = f"clear:{user.id}:{agent.id}:{secrets.token_hex(6)}"
+        if bal > 0:                      # player is up: sweep it to the house
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=wallet.id, dst=house.id, amount_micros=bal,
+                                  ref_type="agent", ref_id=agent.id,
+                                  src_floor_micros=-user.credit_limit_micros)
+        else:                            # player is down: forgive it to zero
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=house.id, dst=wallet.id, amount_micros=-bal,
+                                  ref_type="agent", ref_id=agent.id)
+    await session.commit()
+    return {"username": user.username, "balance": "0.00", "cleared": str(from_micros(bal))}
+
+
+@router.delete("/customers/{user_id}")
+async def delete_customer(user_id: int, agent: User = Depends(current_admin),
+                          session: AsyncSession = Depends(get_session)):
+    """Remove a customer from the book. The money trail is sacred -- the
+    ledger entries stay for the zero-sum invariant -- so this squares the
+    balance to zero, then archives the account: disabled, every product off,
+    login scrambled, and the username freed for reuse. It vanishes from the
+    active sheet and can never wager or sign in again.
+    """
+    from ..core.security import hash_password
+
+    user = await session.get(User, user_id)
+    if user is None or user.is_admin:
+        raise HTTPException(404, "no such customer")
+    scope = await _scope_ids(session, agent)
+    if not _in_scope(user.id, scope):
+        raise HTTPException(403, "that customer is on another agent's sheet")
+
+    # settle to even first, so nothing is left owed either direction
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    bal = await ledger.balance_of(session, wallet.id)
+    if bal != 0:
+        key = f"delclear:{user.id}:{secrets.token_hex(6)}"
+        if bal > 0:
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=wallet.id, dst=house.id, amount_micros=bal,
+                                  ref_type="agent", ref_id=agent.id,
+                                  src_floor_micros=-user.credit_limit_micros)
+        else:
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=house.id, dst=wallet.id, amount_micros=-bal,
+                                  ref_type="agent", ref_id=agent.id)
+
+    old = user.username
+    user.is_active = 0
+    user.allow_sportsbook = 0
+    user.allow_casino = 0
+    user.allow_live = 0
+    user.credit_limit_micros = 0
+    user.password_hash = hash_password(secrets.token_hex(24))
+    user.username = f"~deleted:{user.id}:{old}"[:32]
+    await session.commit()
+    return {"deleted": f"L77{user.id:04d}", "was": old}
 
 
 class FreePlayRequest(BaseModel):
@@ -470,7 +550,9 @@ async def weekly_figures(weeks_back: int = 0, agent: User = Depends(current_admi
     end = start + timedelta(days=7)
 
     scope = await _scope_ids(session, agent)
-    q = select(User).where(User.is_admin == 0).order_by(User.username)
+    q = (select(User).where(User.is_admin == 0,
+                            ~User.username.like("~deleted:%"))
+         .order_by(User.username))
     if scope is not None:
         q = q.where(User.id.in_(scope))
     users = (await session.execute(q)).scalars().all()
@@ -1684,7 +1766,9 @@ async def performance_report(window: str = "today", action: str = "all",
                        "blackjack_hand") if action == "casino" else None)
 
     scope = await _scope_ids(session, agent)
-    q = select(User).where(User.is_admin == 0).order_by(User.username)
+    q = (select(User).where(User.is_admin == 0,
+                            ~User.username.like("~deleted:%"))
+         .order_by(User.username))
     if scope is not None:
         q = q.where(User.id.in_(scope))
     users = (await session.execute(q)).scalars().all()

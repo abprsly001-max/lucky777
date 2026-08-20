@@ -658,6 +658,30 @@ function CustomersTable({ onErr, openProfile }: {
     if (!v) return;
     await patch(c, { new_password: v });
   }
+  async function clearBal(c: Customer) {
+    if (!confirm(`Clear ${c.username}'s balance (${money(c.balance)}) to $0.00?`)) return;
+    setBusy(c.id);
+    try {
+      const r = await api.agentClearBalance(c.id);
+      onErr(""); load();
+      alert(`${r.username} squared to $0.00 (cleared ${money(r.cleared)}).`);
+    } catch (e: any) { onErr(e.message); } finally { setBusy(null); }
+  }
+  async function removeCustomer(c: Customer) {
+    if (!confirm(`DELETE ${c.account} (${c.username})?\n\n` +
+      `Balance is squared to zero and the account is archived — it can never ` +
+      `log in or wager again, and drops off your sheet. The ledger history is ` +
+      `kept. This cannot be undone.`)) return;
+    if (prompt(`Type the account number to confirm: ${c.account}`) !== c.account) {
+      onErr("Delete cancelled — account number didn't match."); return;
+    }
+    setBusy(c.id);
+    try {
+      const r = await api.agentDeleteCustomer(c.id);
+      onErr(""); load();
+      alert(`${r.deleted} (${r.was}) deleted.`);
+    } catch (e: any) { onErr(e.message); } finally { setBusy(null); }
+  }
   async function freePlay(c: Customer) {
     const v = prompt(
       `Free play for ${c.username} (current FP: ${money(c.free_play)}).\n` +
@@ -780,6 +804,11 @@ function CustomersTable({ onErr, openProfile }: {
                             if (v !== null) patch(c, { wager_limit: v });
                           }}>wager limit</Mini>
                           <Mini disabled={busy === c.id} onClick={() => resetPw(c)}>password</Mini>
+                          <Mini disabled={busy === c.id} onClick={() => clearBal(c)}>clear to $0</Mini>
+                          <button disabled={busy === c.id} onClick={() => removeCustomer(c)}
+                            className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-40">
+                            delete
+                          </button>
                           <span className="ml-auto text-[10px] text-slate-500">
                             week {money(c.week_figure)} · {c.week_wagers} wager(s) ·
                             pending {c.pending_wagers}

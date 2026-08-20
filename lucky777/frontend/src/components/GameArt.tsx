@@ -61,7 +61,7 @@ const ROYAL_COLORS: Record<string, [string, string]> = {
 function RoyalFace({ ch, from, to }: { ch: string; from: string; to: string }) {
   const gid = `roy-${ch}-${from.slice(1)}`;
   return (
-    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+    <svg viewBox="0 0 48 48" className="h-[90%] w-[90%]">
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={from} /><stop offset="1" stopColor={to} />
@@ -79,7 +79,7 @@ function RoyalFace({ ch, from, to }: { ch: string; from: string; to: string }) {
 
 function GemFace({ from, mid, to }: { from: string; mid: string; to: string }) {
   return (
-    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+    <svg viewBox="0 0 48 48" className="h-[88%] w-[88%]">
       {/* body bright so the cut reads on a dark plate; facets shade darker */}
       <polygon points="24,4 40,16 24,44 8,16" fill={mid} />
       <polygon points="24,4 8,16 24,22" fill={from} />
@@ -96,7 +96,7 @@ function GemFace({ from, mid, to }: { from: string; mid: string; to: string }) {
 
 function BellFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+    <svg viewBox="0 0 48 48" className="h-[86%] w-[86%]">
       <defs>
         <linearGradient id="bellg" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#c47f0e" />
@@ -114,7 +114,7 @@ function BellFace() {
 
 function CherryFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+    <svg viewBox="0 0 48 48" className="h-[86%] w-[86%]">
       <path d="M17 25C20 14 27 8 38 7" fill="none" stroke="#2f8f3a" strokeWidth="3"
         strokeLinecap="round" />
       <path d="M30 26C30 17 33 11 38 7" fill="none" stroke="#2f8f3a" strokeWidth="3"
@@ -163,7 +163,7 @@ function CoinFace() {
 
 function CrownFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+    <svg viewBox="0 0 48 48" className="h-[86%] w-[86%]">
       <defs>
         <linearGradient id="crng" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#c47f0e" />
@@ -202,7 +202,7 @@ function FruitFace({ kind }: { kind: string }) {
       ? [[17, 20], [24, 18], [31, 20], [20, 27], [28, 27], [24, 34]]
       : [[24, 27]];
     return (
-      <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <svg viewBox="0 0 48 48" className="h-[86%] w-[86%]">
         <path d="M24 13c0-3.5 2-6 5-7" fill="none" stroke="#2f8f3a" strokeWidth="2.6"
           strokeLinecap="round" />
         <path d="M28 6c3-1 5 0 6 2-2 1.6-4.6 1-6-2z" fill="#3aa845" />
@@ -220,7 +220,7 @@ function FruitFace({ kind }: { kind: string }) {
   }
   if (kind === "melon") {
     return (
-      <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <svg viewBox="0 0 48 48" className="h-[86%] w-[86%]">
         <path d="M6 20a18 18 0 0 0 36 0z" fill="#16a34a" />
         <path d="M9 20a15 15 0 0 0 30 0z" fill="#dcfce7" />
         <path d="M11.5 20a12.5 12.5 0 0 0 25 0z" fill="#e63253" />
@@ -235,7 +235,7 @@ function FruitFace({ kind }: { kind: string }) {
 
 function SkullFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+    <svg viewBox="0 0 48 48" className="h-[88%] w-[88%]">
       <defs>
         <linearGradient id="skullg" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#f1f5f9" /><stop offset="1" stopColor="#94a3b8" />
@@ -259,7 +259,7 @@ function SkullFace() {
 
 function CoffinFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+    <svg viewBox="0 0 48 48" className="h-[88%] w-[88%]">
       <defs>
         <linearGradient id="cofg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#7c4a1e" /><stop offset="1" stopColor="#3b2007" />
@@ -276,7 +276,7 @@ function CoffinFace() {
 
 function CandleFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+    <svg viewBox="0 0 48 48" className="h-[88%] w-[88%]">
       <ellipse cx="24" cy="15" rx="6" ry="9" fill="#fbbf24" opacity="0.25" />
       <path d="M24 8c2.6 3 3.8 5 3.8 7a3.8 3.8 0 1 1-7.6 0c0-2 1.2-4 3.8-7z"
         fill="#fbbf24" />
@@ -294,7 +294,7 @@ function CandleFace() {
 
 function FlaskFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[78%] w-[78%]">
+    <svg viewBox="0 0 48 48" className="h-[88%] w-[88%]">
       <rect x="21" y="5" width="6" height="6" rx="1" fill="#9aa8b8" />
       <path d="M21 10h6v6l7 16a6 6 0 0 1-5.5 8.4h-9A6 6 0 0 1 14 32l7-16z"
         fill="rgba(190,220,235,0.35)" stroke="#9fb6c6" strokeWidth="1.2" />
@@ -618,7 +618,7 @@ export function BonusCharacter({ kind, casting }: {
 // ---- theme premium symbols: compact original vector art per machine mood
 function MaskFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+    <svg viewBox="0 0 48 48" className="h-[90%] w-[90%]">
       <path d="M24 4c10 0 15 6 15 16 0 12-7 24-15 24S9 32 9 20C9 10 14 4 24 4z"
         fill="#e7c368" stroke="#8a5a00" strokeWidth="1.5" />
       <path d="M24 4c6 0 9 4 9 5-3 1-6 1-9 1s-6 0-9-1c0-1 3-5 9-5z" fill="#2e9e6b" />
@@ -634,7 +634,7 @@ function MaskFace() {
 }
 function JaguarFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M10 14l6 4h16l6-4-2 8 3 6-5 3-3 8H17l-3-8-5-3 3-6z"
         fill="#e0913a" stroke="#5c3410" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M14 12l4 6-6-1zM34 12l-4 6 6-1z" fill="#5c3410" />
@@ -650,7 +650,7 @@ function JaguarFace() {
 }
 function SnakeFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M12 40c0-10 8-10 8-18 0-5-6-5-6-10 0-4 4-6 8-6"
         fill="none" stroke="#2e9e6b" strokeWidth="6" strokeLinecap="round" />
       <path d="M12 40c0-10 8-10 8-18 0-5-6-5-6-10 0-4 4-6 8-6"
@@ -665,7 +665,7 @@ function SnakeFace() {
 function BirdFace({ eagle }: { eagle?: boolean }) {
   const body = eagle ? "#5c4326" : "#3f3f46";
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M24 12c-8 0-14 5-18 14 6-3 10-2 12 2-2 6-6 8-6 8 8 2 14-2 16-8
         2 6 8 10 16 8 0 0-4-2-6-8 2-4 6-5 12-2-4-9-10-14-18-14z"
         fill={body} stroke="#18181b" strokeWidth="1.2" strokeLinejoin="round" />
@@ -677,7 +677,7 @@ function BirdFace({ eagle }: { eagle?: boolean }) {
 }
 function WolfFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M10 12l6 6h16l6-6-1 10 4 4-6 2-5 8H18l-5-8-6-2 4-4z"
         fill="#71717a" stroke="#27272a" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M13 11l4 7-6-2zM35 11l-4 7 6-2z" fill="#3f3f46" />
@@ -691,7 +691,7 @@ function WolfFace() {
 }
 function CactusFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <rect x="20" y="14" width="8" height="30" rx="4" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
       <path d="M20 26h-4a4 4 0 0 0-4 4v4a3 3 0 0 0 6 0v-6" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
       <path d="M28 22h4a4 4 0 0 1 4 4v6a3 3 0 0 1-6 0v-8" fill="#3f9e52" stroke="#1f5e30" strokeWidth="1.2" />
@@ -703,7 +703,7 @@ function CactusFace() {
 }
 function IdolSymFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M14 6h20l3 8-3 6 3 8-4 12H15L11 28l3-8-3-6z" fill="#c9a44a"
         stroke="#6e4d10" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M18 4h12l-2 6H20z" fill="#2e9e6b" stroke="#14532d" strokeWidth="1" />
@@ -717,7 +717,7 @@ function IdolSymFace() {
 }
 function SunFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <defs><linearGradient id="sunsym" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor="#fde68a" /><stop offset="1" stopColor="#f97316" />
       </linearGradient></defs>
@@ -731,7 +731,7 @@ function SunFace() {
 }
 function PalmFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[84%] w-[84%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M23 22c1 8 0 16-2 22h6c-2-6-3-14-2-22z" fill="#7c5b32" stroke="#4a3410" strokeWidth="1" />
       <path d="M24 20c-8-6-16-6-20-3 5-2 10 0 12 3-8-3-14 1-16 6 6-4 11-3 14 0-6 0-10 5-11 10 5-6 10-6 13-4 0 0 3-8 8-12z" fill="#22a05a" stroke="#14532d" strokeWidth="0.8" strokeLinejoin="round" />
       <path d="M24 20c8-6 16-6 20-3-5-2-10 0-12 3 8-3 14 1 16 6-6-4-11-3-14 0" fill="#2eb765" stroke="#14532d" strokeWidth="0.8" />
@@ -741,7 +741,7 @@ function PalmFace() {
 }
 function CassetteFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%]">
+    <svg viewBox="0 0 48 48" className="h-[90%] w-[90%]">
       <rect x="6" y="12" width="36" height="24" rx="3" fill="#a855f7" stroke="#2a0a4a" strokeWidth="1.5" />
       <rect x="10" y="16" width="28" height="9" rx="1.5" fill="#1e1030" />
       <circle cx="18" cy="20.5" r="3" fill="#f0abfc" /><circle cx="18" cy="20.5" r="1" fill="#1e1030" />
@@ -753,7 +753,7 @@ function CassetteFace() {
 }
 function ShadesFace() {
   return (
-    <svg viewBox="0 0 48 48" className="h-[82%] w-[82%]">
+    <svg viewBox="0 0 48 48" className="h-[92%] w-[92%]">
       <path d="M6 18h36" stroke="#22d3ee" strokeWidth="2.4" strokeLinecap="round" />
       <path d="M7 18h14a2 2 0 0 1 2 2c0 6-3 9-8 9s-8-3-8-8a3 3 0 0 1 0-3z"
         fill="#0e7490" stroke="#22d3ee" strokeWidth="1.5" />

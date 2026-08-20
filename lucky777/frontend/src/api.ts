@@ -590,6 +590,12 @@ export const api = {
     request<{ username: string; adjusted: string; balance: string }>(
       `/api/agent/customers/${id}/adjust`, {
         method: "POST", body: JSON.stringify({ amount, note }) }),
+  agentClearBalance: (id: number) =>
+    request<{ username: string; balance: string; cleared: string }>(
+      `/api/agent/customers/${id}/clear`, { method: "POST" }),
+  agentDeleteCustomer: (id: number) =>
+    request<{ deleted: string; was: string }>(
+      `/api/agent/customers/${id}`, { method: "DELETE" }),
   agentProfile: (id: number) =>
     request<{ id: number; account: string; username: string;
               display_name: string | null; notes: string; active: boolean;
