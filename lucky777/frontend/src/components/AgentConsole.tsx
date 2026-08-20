@@ -647,7 +647,7 @@ function CustomersTable({ onErr, openProfile }: {
     catch (e: any) { onErr(e.message); } finally { setBusy(null); }
   }
   async function resetPw(c: Customer) {
-    const v = prompt(`New password for ${c.username} (min 6 chars)`);
+    const v = prompt(`New password for ${c.username} (min 2 chars)`);
     if (!v) return;
     await patch(c, { new_password: v });
   }
@@ -886,7 +886,7 @@ function AddCustomer({ onErr }: { onErr: (m: string) => void }) {
   const [agents, setAgents] = useState<{ id: number; username: string }[]>([]);
 
   // bulk
-  const [bulk, setBulk] = useState({ count: "5", agent_id: "", prefix: "RCK",
+  const [bulk, setBulk] = useState({ count: "1", agent_id: "", prefix: "RCK",
                                      start: "", credit_limit: "500", wager_limit: "500" });
   const [issued, setIssued] = useState<{ account: string; username: string; password: string }[]>([]);
   const [issuedUnder, setIssuedUnder] = useState("");
@@ -1048,7 +1048,7 @@ function AddCustomer({ onErr }: { onErr: (m: string) => void }) {
                 className="w-full rounded bg-base-700 px-3 py-2 text-sm outline-none" />
             </Field>
             <Field label="Password" hint="leave blank to generate one">
-              <input value={f.password} minLength={6}
+              <input value={f.password} minLength={2}
                 onChange={(e) => setF({ ...f, password: e.target.value })}
                 className="w-full rounded bg-base-700 px-3 py-2 font-mono text-sm outline-none" />
             </Field>
@@ -3109,7 +3109,7 @@ function AgentAdmin({ onErr }: { onErr: (m: string) => void }) {
     catch (e: any) { onErr(e.message); } finally { setBusy(null); }
   }
   async function resetPw(a: { id: number; username: string }) {
-    const v = prompt(`New password for agent ${a.username} (min 6 chars)`);
+    const v = prompt(`New password for agent ${a.username} (min 2 chars)`);
     if (!v) return;
     setBusy(a.id);
     try { await api.agentUpdateAgent(a.id, { new_password: v }); onErr(""); load(); }
@@ -3186,7 +3186,7 @@ function AddAgent({ onErr }: { onErr: (m: string) => void }) {
               className="w-full rounded bg-base-700 px-3 py-2 text-sm outline-none" />
           </Field>
           <Field label="Password" hint="leave blank to generate one">
-            <input value={f.password} minLength={6}
+            <input value={f.password} minLength={2}
               onChange={(e) => setF({ ...f, password: e.target.value })}
               className="w-full rounded bg-base-700 px-3 py-2 font-mono text-sm outline-none" />
           </Field>

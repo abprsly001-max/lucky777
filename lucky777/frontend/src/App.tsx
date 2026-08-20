@@ -128,6 +128,10 @@ function AuthScreen({ onAuthed }: { onAuthed: (s: Me) => void }) {
 // ----------------------------------------------------------------- shell ----
 function Shell({ session, setSession }: { session: Me; setSession: (s: Me) => void }) {
   const setBalance = (balance: string) => setSession({ ...session, balance });
+  // tapping the 777 logo goes HOME: bump the key so the active console
+  // remounts to its default screen (works for player + admin, any size)
+  const [home, setHome] = useState(0);
+  const goHome = () => { setHome((h) => h + 1); window.scrollTo({ top: 0 }); };
 
   return (
     <div className="min-h-screen text-slate-200">
@@ -136,13 +140,14 @@ function Shell({ session, setSession }: { session: Me; setSession: (s: Me) => vo
         after:bg-gradient-to-r after:from-transparent after:via-gold/50 after:to-transparent
         relative">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-5">
-          <div className="flex items-center gap-2.5">
+          <button onClick={goHome} title="Home"
+            className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80 active:scale-95">
             <LogoMark size={28} />
             <Wordmark className="text-lg leading-none" />
             <span className="mt-0.5 hidden rounded-full border border-white/10 px-2 py-0.5 text-[9px] font-medium uppercase tracking-widest text-slate-400 sm:inline-block">
               play money
             </span>
-          </div>
+          </button>
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-xs font-medium text-slate-400 sm:inline">{session.username}</span>
             {session.isAdmin ? (
@@ -177,8 +182,8 @@ function Shell({ session, setSession }: { session: Me; setSession: (s: Me) => vo
 
       <main className="mx-auto max-w-7xl p-4 sm:p-5">
         {session.isAdmin
-          ? <AgentConsole username={session.username} isMaster={session.isMaster} />
-          : <PlayerView onBalance={setBalance} username={session.username} />}
+          ? <AgentConsole key={home} username={session.username} isMaster={session.isMaster} />
+          : <PlayerView key={home} onBalance={setBalance} username={session.username} />}
       </main>
 
       <footer className="border-t border-white/5 px-5 py-5 text-center text-[11px] leading-relaxed text-slate-500">

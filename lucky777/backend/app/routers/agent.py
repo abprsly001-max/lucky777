@@ -177,7 +177,7 @@ def _in_scope(user_id: int, scope: list[int] | None) -> bool:
 # ------------------------------------------------------------- customers ----
 class NewCustomer(BaseModel):
     username: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
-    password: str | None = Field(None, min_length=6, max_length=128)
+    password: str | None = Field(None, min_length=2, max_length=128)
     # deposit is prepaid money; credit_limit is how deep they may run negative.
     # The classic book is deposit 0 / credit 500 -- they play on credit and
     # square up when the week settles.
@@ -505,7 +505,7 @@ class UpdateCustomer(BaseModel):
     display_name: str | None = Field(None, max_length=64)
     notes: str | None = Field(None, max_length=500)
     agent_id: int | None = None         # master only: move to another sheet
-    new_password: str | None = Field(None, min_length=6, max_length=128)
+    new_password: str | None = Field(None, min_length=2, max_length=128)
 
 
 @router.patch("/customers/{user_id}")
@@ -1038,7 +1038,7 @@ async def bulk_create_customers(body: BulkCustomers,
 # ------------------------------------------------------------ sub-agents ----
 class NewAgent(BaseModel):
     username: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
-    password: str | None = Field(None, min_length=6, max_length=128)
+    password: str | None = Field(None, min_length=2, max_length=128)
 
 
 @router.post("/agents")
@@ -1097,7 +1097,7 @@ async def list_agents(master: User = Depends(current_master),
 
 class UpdateAgent(BaseModel):
     active: bool | None = None
-    new_password: str | None = Field(None, min_length=6, max_length=128)
+    new_password: str | None = Field(None, min_length=2, max_length=128)
 
 
 @router.patch("/agents/{agent_id}")

@@ -53,6 +53,15 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [preset, setPreset] = useState<TicketType>("auto");
+  // Straight vs Parlay are shown as two chips; both drive "auto" placement
+  // (single leg = straight, 2+ = parlay) but the slip defaults accordingly
+  const [betMode, setBetMode] = useState<"straight" | "parlay">("straight");
+
+  // keep the phone/browser BACK button INSIDE the book: going deeper pushes a
+  // history entry, so Back steps board→pick / detail→board instead of logging
+  // the player off the whole app
+  const pushHist = () => window.history.pushState({ sb: Date.now() }, "");
+  const enterBoard = () => { if (phase !== "board") pushHist(); setPhase("board"); };
   const [presetTier, setPresetTier] = useState(0);
   const [liveOnly, setLiveOnly] = useState(false);
   const [propsOnly, setPropsOnly] = useState(false);
@@ -84,6 +93,24 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
     const t = setInterval(() => { loadEvents(true); }, 8000);
     return () => clearInterval(t);
   }, [anyLive, loadEvents]);
+
+  // the BACK button steps back one screen inside the book instead of leaving
+  useEffect(() => {
+    const onPop = () => {
+      // close the deepest open layer. The browser already consumed one
+      // history entry, so we never re-push — depth stays in lockstep.
+      if (liveDetail !== null) { setLiveDetail(null); return; }
+      if (confirming) { setConfirming(false); return; }
+      if (view === "bets") { setView("board"); return; }
+      if (phase === "board") {
+        setPhase("pick"); setLiveOnly(false); setPropsOnly(false); return;
+      }
+      // already at the sport list: let the app decide (default behaviour)
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, view, confirming, liveDetail]);
 
   // futures (outrights) live on their own board, never in the game lists
   const isFutures = (e: SbEvent) => e.markets.some((m) => m.type === "outright");
@@ -156,6 +183,23 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         return next;
       });
     };
+    // tapping a sport or league jumps STRAIGHT into its games (except teaser,
+    // which needs you to multi-select football/basketball first)
+    const enterSport = (key: string) => {
+      if (preset === "teaser") { toggleSport(key); return; }
+      const s = catalog.get(key);
+      if (!s) return;
+      setChecked(new Set([...s.leagues.keys()]));
+      enterBoard();
+    };
+    const enterLeague = (lk: string) => {
+      if (preset === "teaser") {
+        setChecked((p) => { const n = new Set(p); n.has(lk) ? n.delete(lk) : n.add(lk); return n; });
+        return;
+      }
+      setChecked(new Set([lk]));
+      enterBoard();
+    };
     return (
       <div className="mx-auto max-w-2xl space-y-3">
         {/* balance strip + ticket type, the way a player expects to land */}
@@ -176,17 +220,28 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={() => setView("bets")}
+            <button onClick={() => { pushHist(); setView("bets"); }}
               className="rounded-lg bg-base-700 px-3 py-2 text-xs hover:bg-base-600">
               My bets ({bets.length})
             </button>
           </div>
         </div>
 
-        {/* one-tap ticket type — straight/parlay and the exotics, no menus */}
+        {/* one-tap ticket type — Straight and Parlay are their own chips now */}
         <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
-          {([["auto", "Straight / Parlay"], ["teaser", "Teaser"],
-             ["if_win", "If-Win"], ["if_action", "If-Action"],
+          <button onClick={() => { setPreset("auto"); setBetMode("straight"); }}
+            className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${
+              preset === "auto" && betMode === "straight" ? "btn-gold text-base-900"
+                : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+            Straight
+          </button>
+          <button onClick={() => { setPreset("auto"); setBetMode("parlay"); }}
+            className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${
+              preset === "auto" && betMode === "parlay" ? "btn-gold text-base-900"
+                : "bg-base-800 text-slate-300 hover:bg-base-700"}`}>
+            Parlay
+          </button>
+          {([["teaser", "Teaser"], ["if_win", "If-Win"], ["if_action", "If-Action"],
              ["reverse", "Reverse"]] as [TicketType, string][]).map(([id, label]) => (
             <button key={id} onClick={() => setPreset(id)}
               className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${
@@ -196,11 +251,11 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
             </button>
           ))}
           <span className="mx-0.5 my-1 w-px shrink-0 bg-white/10" />
-          <button onClick={() => { setLiveOnly(true); setPropsOnly(false); setPhase("board"); }}
+          <button onClick={() => { setLiveOnly(true); setPropsOnly(false); enterBoard(); }}
             className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-red-300 hover:bg-base-700">
             ● Live{anyLive ? " now" : ""}
           </button>
-          <button onClick={() => { setPropsOnly(true); setLiveOnly(false); setPhase("board"); }}
+          <button onClick={() => { setPropsOnly(true); setLiveOnly(false); enterBoard(); }}
             className="shrink-0 rounded-full bg-base-800 px-3.5 py-2 text-xs font-bold text-sky-300 hover:bg-base-700">
             Props +
           </button>
@@ -220,6 +275,16 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
 
         {notice && (
           <div className="rounded bg-base-700 px-3 py-2 text-xs text-slate-300">{notice}</div>
+        )}
+
+        {/* the always-visible entry point — no scrolling to find "Continue".
+            Tapping any sport below jumps straight into its games; this is the
+            "everything" door. */}
+        {preset !== "teaser" && (
+          <button onClick={enterBoard}
+            className="btn-gold flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-black uppercase tracking-wide text-base-900">
+            {checked.size > 0 ? `View ${checked.size} league(s)` : "View all games"} ›
+          </button>
         )}
 
         {preset === "teaser" && (
@@ -246,7 +311,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
               return (
                 <div key={key} className="overflow-hidden rounded-xl border border-white/5 bg-base-800 shadow-card">
                   <div className="flex w-full items-center gap-3 px-4 py-3">
-                    <button onClick={() => toggleSport(key)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                    <button onClick={() => enterSport(key)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                       <span className="text-lg">{s.icon}</span>
                       <span className="text-sm font-bold uppercase tracking-wide text-slate-100">
                         {s.name}
@@ -261,11 +326,15 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
                           {onCount}
                         </span>
                       )}
+                      {preset !== "teaser" && (
+                        <span className="ml-auto text-slate-600">›</span>
+                      )}
                     </button>
                     <button onClick={() => setExpanded((p) => {
                         const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n;
                       })}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-base-700 text-base font-bold text-gold hover:bg-base-600">
+                      title="Show leagues"
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-base-700 text-base font-bold text-gold hover:bg-base-600">
                       {open ? "−" : "+"}
                     </button>
                   </div>
@@ -276,17 +345,22 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
                         const on = checked.has(lk);
                         return (
                           <button key={lk}
-                            onClick={() => setChecked((p) => {
-                              const n = new Set(p); on ? n.delete(lk) : n.add(lk); return n;
-                            })}
+                            onClick={() => enterLeague(lk)}
                             className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-base-700/40">
                             <span className="flex items-center gap-2.5 text-xs text-slate-200">
-                              <span className={`grid h-4 w-4 place-items-center rounded-sm text-[10px] font-bold ${
-                                on ? "btn-gold text-base-900" : "bg-base-700 text-transparent"}`}>✓</span>
+                              {preset === "teaser" ? (
+                                <span className={`grid h-4 w-4 place-items-center rounded-sm text-[10px] font-bold ${
+                                  on ? "btn-gold text-base-900" : "bg-base-700 text-transparent"}`}>✓</span>
+                              ) : (
+                                <span className="text-slate-500">🏆</span>
+                              )}
                               {l.name}
                               {l.live && <span className="text-[9px] font-bold uppercase text-red-400">● live</span>}
                             </span>
-                            <span className="font-mono text-[10px] text-slate-500">{l.count}</span>
+                            <span className="flex items-center gap-2 font-mono text-[10px] text-slate-500">
+                              {l.count}
+                              {preset !== "teaser" && <span className="text-slate-600">›</span>}
+                            </span>
                           </button>
                         );
                       })}
@@ -298,16 +372,17 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => { setChecked(new Set()); loadEvents(); }}
-            className="rounded-lg bg-red-700/80 py-2.5 text-sm font-bold text-white hover:bg-red-600">
-            Refresh
+        {/* teaser still uses Continue (multi-select), shown big and clear */}
+        {preset === "teaser" && (
+          <button onClick={enterBoard}
+            className="btn-gold w-full rounded-xl py-3 text-sm font-black uppercase tracking-wide text-base-900">
+            Continue{checked.size > 0 ? ` (${checked.size})` : ""} ›
           </button>
-          <button onClick={() => setPhase("board")}
-            className="rounded-lg bg-accent py-2.5 text-sm font-bold text-base-900 hover:brightness-110">
-            Continue{checked.size > 0 ? ` (${checked.size})` : " — all sports"}
-          </button>
-        </div>
+        )}
+        <button onClick={() => { setChecked(new Set()); loadEvents(); }}
+          className="w-full rounded-lg bg-base-700 py-2 text-xs font-bold text-slate-300 hover:bg-base-600">
+          ↻ Refresh the board
+        </button>
         {isAdmin && (
           <button onClick={simulate}
             className="w-full rounded bg-gold/20 px-3 py-1.5 text-xs text-gold hover:bg-gold/30">
@@ -324,7 +399,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
       ? "grid gap-5" : "grid gap-5 lg:grid-cols-[1fr_320px]"}>
       <div className="min-w-0">
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
-          <button onClick={() => { setPhase("pick"); setView("board"); setLiveOnly(false); setPropsOnly(false); }}
+          <button onClick={() => window.history.back()}
             className="rounded bg-base-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-base-600">
             ← Sports
           </button>
@@ -363,7 +438,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
         ) : (!liveOnly && preset === "auto") ? (
           confirming ? (
             <ConfirmWagers picks={classicPicks} setPicks={setClassicPicks}
-              onBack={() => setConfirming(false)}
+              onBack={() => window.history.back()}
               onPlaced={(b) => { onBalance(b); refreshBets();
                 api.myFigures().then((f) => setFig({ balance: f.balance, available: f.available }))
                   .catch(() => {}); }} />
@@ -375,7 +450,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
                 return n;
               })}
               onRefresh={() => loadEvents()}
-              onContinue={() => setConfirming(true)}
+              onContinue={() => { pushHist(); setConfirming(true); }}
               onProps={() => setPropsOnly(true)} />
           )
         ) : liveOnly ? (
@@ -384,10 +459,10 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
             const det = liveDetail != null ? liveEvs.find((e) => e.id === liveDetail) : undefined;
             if (det) {
               return <LiveDetail ev={det} selected={selected} onPick={toggle}
-                onBack={() => setLiveDetail(null)} />;
+                onBack={() => window.history.back()} />;
             }
             return <LiveBoard events={liveEvs} selected={selected} onPick={toggle}
-              onOpen={(id) => setLiveDetail(id)} />;
+              onOpen={(id) => { pushHist(); setLiveDetail(id); }} />;
           })()
         ) : (
           <div className="space-y-3">

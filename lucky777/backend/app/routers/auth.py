@@ -16,7 +16,7 @@ class Credentials(BaseModel):
     """Login only. There is no public registration: operators are created with
     `python -m app.cli create-admin`, customers are booked by an agent."""
     username: str = Field(..., min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=2, max_length=128)
 
 
 class TokenResponse(BaseModel):

@@ -164,7 +164,7 @@ async def _bootstrap():
         if settings.admin_username and settings.admin_password:
             existing = (await session.execute(select(User).where(
                 User.username == settings.admin_username))).scalar_one_or_none()
-            if existing is None and len(settings.admin_password) >= 6:
+            if existing is None and len(settings.admin_password) >= 2:
                 user = User(username=settings.admin_username,
                             password_hash=hash_password(settings.admin_password),
                             is_admin=1, is_master=1)
@@ -222,7 +222,7 @@ app.include_router(sportsbook_router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "build": "2026-08-19-rck-accounts"}
+    return {"ok": True, "build": "2026-08-19-nav-flow"}
 
 
 # serve the built frontend if it exists (single-command production mode)
