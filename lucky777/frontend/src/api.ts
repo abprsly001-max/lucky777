@@ -593,6 +593,10 @@ export const api = {
   agentClearBalance: (id: number) =>
     request<{ username: string; balance: string; cleared: string }>(
       `/api/agent/customers/${id}/clear`, { method: "POST" }),
+  agentSetBalance: (id: number, target: string, note = "") =>
+    request<{ username: string; balance: string; moved: string }>(
+      `/api/agent/customers/${id}/setbalance`, {
+        method: "POST", body: JSON.stringify({ target, note }) }),
   agentDeleteCustomer: (id: number) =>
     request<{ deleted: string; was: string }>(
       `/api/agent/customers/${id}`, { method: "DELETE" }),

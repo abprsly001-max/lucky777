@@ -634,6 +634,7 @@ function CustomersTable({ onErr, openProfile }: {
   const [rows, setRows] = useState<Customer[] | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  const [amt, setAmt] = useState<Record<number, string>>({});
 
   const load = useCallback(() => {
     api.agentCustomers().then(setRows).catch((e) => onErr(e.message));
@@ -645,18 +646,34 @@ function CustomersTable({ onErr, openProfile }: {
     try { await api.agentUpdateCustomer(c.id, b); onErr(""); load(); }
     catch (e: any) { onErr(e.message); } finally { setBusy(null); }
   }
-  async function adjust(c: Customer) {
-    const v = prompt(`Adjust ${c.username}'s balance (positive credits, negative debits)`, "");
-    if (!v || !Number(v)) return;
-    const note = prompt("Note (optional)", "") ?? "";
-    setBusy(c.id);
-    try { await api.agentAdjust(c.id, v, note); onErr(""); load(); }
-    catch (e: any) { onErr(e.message); } finally { setBusy(null); }
-  }
   async function resetPw(c: Customer) {
     const v = prompt(`New password for ${c.username} (min 6 chars)`);
     if (!v) return;
     await patch(c, { new_password: v });
+  }
+  // one-tap money moves — no prompts. quickMove deposits (+) or withdraws (-);
+  // setExact lands the wallet on a typed number.
+  async function quickMove(c: Customer, sign: 1 | -1) {
+    const raw = (amt[c.id] ?? "").trim();
+    const n = Number(raw);
+    if (!raw || !n) { onErr("Enter an amount first."); return; }
+    setBusy(c.id);
+    try {
+      const r = await api.agentAdjust(c.id, String(sign * Math.abs(n)),
+        sign > 0 ? "deposit" : "withdrawal");
+      onErr(""); setAmt((a) => ({ ...a, [c.id]: "" })); load();
+      alert(`${r.username} balance is now ${money(r.balance)}`);
+    } catch (e: any) { onErr(e.message); } finally { setBusy(null); }
+  }
+  async function setExact(c: Customer) {
+    const raw = (amt[c.id] ?? "").trim();
+    if (raw === "" || isNaN(Number(raw))) { onErr("Enter the exact balance to set."); return; }
+    setBusy(c.id);
+    try {
+      const r = await api.agentSetBalance(c.id, raw);
+      onErr(""); setAmt((a) => ({ ...a, [c.id]: "" })); load();
+      alert(`${r.username} set to ${money(r.balance)}`);
+    } catch (e: any) { onErr(e.message); } finally { setBusy(null); }
   }
   async function clearBal(c: Customer) {
     if (!confirm(`Clear ${c.username}'s balance (${money(c.balance)}) to $0.00?`)) return;
@@ -787,12 +804,44 @@ function CustomersTable({ onErr, openProfile }: {
                   {editing === c.id && (
                     <tr key={`${c.id}-edit`} className="border-b border-base-700/40 bg-base-900/60">
                       <td colSpan={11} className="px-3 py-2">
+                        {/* MONEY — the fast lane: type once, deposit / withdraw /
+                            set exact, all no-prompt */}
+                        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-gold/25 bg-gold/5 p-2 font-sans">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-gold/80">Money</span>
+                          <span className="font-mono text-xs text-slate-300">
+                            balance <span className={`font-bold ${Number(c.balance) < 0 ? "text-red-300" : "text-accent"}`}>{money(c.balance)}</span>
+                          </span>
+                          <input value={amt[c.id] ?? ""} inputMode="decimal"
+                            onChange={(e) => setAmt((a) => ({ ...a, [c.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
+                            placeholder="amount"
+                            className="w-24 rounded-md border border-white/10 bg-base-800 px-2 py-1 font-mono text-xs text-slate-100 outline-none" />
+                          {["50", "100", "500"].map((v) => (
+                            <button key={v} disabled={busy === c.id}
+                              onClick={() => setAmt((a) => ({ ...a, [c.id]: v }))}
+                              className="rounded-md bg-base-700 px-2 py-1 font-mono text-[11px] font-bold text-slate-300 hover:bg-base-600 disabled:opacity-40">{v}</button>
+                          ))}
+                          <button disabled={busy === c.id} onClick={() => quickMove(c, 1)}
+                            className="rounded-md border border-accent/40 bg-accent/15 px-3 py-1 text-[11px] font-black uppercase text-accent hover:bg-accent/25 disabled:opacity-40">
+                            + Deposit
+                          </button>
+                          <button disabled={busy === c.id} onClick={() => quickMove(c, -1)}
+                            className="rounded-md border border-red-400/40 bg-red-500/15 px-3 py-1 text-[11px] font-black uppercase text-red-300 hover:bg-red-500/25 disabled:opacity-40">
+                            − Withdraw
+                          </button>
+                          <button disabled={busy === c.id} onClick={() => setExact(c)}
+                            className="rounded-md border border-sky-400/40 bg-sky-500/15 px-3 py-1 text-[11px] font-black uppercase text-sky-300 hover:bg-sky-500/25 disabled:opacity-40">
+                            Set to =
+                          </button>
+                          <button disabled={busy === c.id} onClick={() => clearBal(c)}
+                            className="rounded-md border border-white/15 bg-base-800 px-3 py-1 text-[11px] font-black uppercase text-slate-300 hover:bg-base-700 disabled:opacity-40">
+                            Clear $0
+                          </button>
+                        </div>
                         <div className="flex flex-wrap items-center gap-2 font-sans">
                           <Mini disabled={busy === c.id}
                             onClick={() => patch(c, { active: !c.active })}>
                             {c.active ? "suspend" : "activate"}
                           </Mini>
-                          <Mini disabled={busy === c.id} onClick={() => adjust(c)}>credit/debit</Mini>
                           <Mini disabled={busy === c.id} onClick={() => freePlay(c)}>free play</Mini>
                           <Mini disabled={busy === c.id} onClick={() => {
                             const v = prompt(`Credit limit for ${c.username} (how deep on credit)`, c.credit_limit);
@@ -804,7 +853,6 @@ function CustomersTable({ onErr, openProfile }: {
                             if (v !== null) patch(c, { wager_limit: v });
                           }}>wager limit</Mini>
                           <Mini disabled={busy === c.id} onClick={() => resetPw(c)}>password</Mini>
-                          <Mini disabled={busy === c.id} onClick={() => clearBal(c)}>clear to $0</Mini>
                           <button disabled={busy === c.id} onClick={() => removeCustomer(c)}
                             className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-40">
                             delete

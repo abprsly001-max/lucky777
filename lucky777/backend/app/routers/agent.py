@@ -346,6 +346,49 @@ async def clear_balance(user_id: int, agent: User = Depends(current_admin),
     return {"username": user.username, "balance": "0.00", "cleared": str(from_micros(bal))}
 
 
+class SetBalanceRequest(BaseModel):
+    target: str          # the exact balance to leave the wallet at
+    note: str = ""
+
+
+@router.post("/customers/{user_id}/setbalance")
+async def set_balance(user_id: int, body: SetBalanceRequest,
+                      agent: User = Depends(current_admin),
+                      session: AsyncSession = Depends(get_session)):
+    """Set a customer's wallet to an EXACT amount in one move -- the endpoint
+    reads the live balance and posts the precise adjustment to land on the
+    target, so the agent never has to do the +/- math. Full ledger trail."""
+    user = await session.get(User, user_id)
+    if user is None or user.is_admin:
+        raise HTTPException(404, "no such customer")
+    scope = await _scope_ids(session, agent)
+    if not _in_scope(user.id, scope):
+        raise HTTPException(403, "that customer is on another agent's sheet")
+    try:
+        target_m = to_micros(Decimal(body.target))
+    except InvalidOperation:
+        raise HTTPException(400, "target is not a number")
+
+    wallet = await ledger.wallet_for(session, user.id)
+    house = await ledger.house_account(session)
+    bal = await ledger.balance_of(session, wallet.id)
+    delta = target_m - bal
+    if delta != 0:
+        key = f"setbal:{user.id}:{agent.id}:{secrets.token_hex(6)}"
+        if delta > 0:
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=house.id, dst=wallet.id, amount_micros=delta,
+                                  ref_type="agent", ref_id=agent.id)
+        else:
+            await ledger.transfer(session, idempotency_key=key, kind="adjustment",
+                                  src=wallet.id, dst=house.id, amount_micros=-delta,
+                                  ref_type="agent", ref_id=agent.id,
+                                  src_floor_micros=-user.credit_limit_micros)
+    await session.commit()
+    return {"username": user.username, "balance": str(from_micros(target_m)),
+            "moved": str(from_micros(delta))}
+
+
 @router.delete("/customers/{user_id}")
 async def delete_customer(user_id: int, agent: User = Depends(current_admin),
                           session: AsyncSession = Depends(get_session)):
