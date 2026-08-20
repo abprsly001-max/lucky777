@@ -220,8 +220,23 @@ async def recent_hits(session: AsyncSession = Depends(get_session)):
             "mult": str(mult.quantize(Decimal("0.1"))),
             "won": str(from_micros(rnd.payout_micros)),
         })
+
+    # per-game hottest multiple in the window, for the lobby heat chips
+    from sqlalchemy import func as _f
+    top_rows = (await session.execute(
+        select(CasinoRound.game,
+               _f.max(CasinoRound.payout_micros * 1.0
+                      / CasinoRound.stake_micros))
+        .where(CasinoRound.status == "settled",
+               CasinoRound.created_at >= since,
+               CasinoRound.stake_micros > 0,
+               CasinoRound.payout_micros.is_not(None),
+               CasinoRound.payout_micros >= CasinoRound.stake_micros * 5)
+        .group_by(CasinoRound.game))).all()
+    tops = {g: str(Decimal(str(m)).quantize(Decimal("0.1")))
+            for g, m in top_rows if m}
     await session.commit()
-    return {"hits": out}
+    return {"hits": out, "tops": tops}
 
 
 @router.get("/lobby")
@@ -877,6 +892,9 @@ async def vp_active(user: User = Depends(current_user),
 class BaccRequest(BaseModel):
     bet: str               # player | banker | tie
     stake: str
+    # pair side bets: the side's first two cards share a rank, pays 12:1
+    side_player_pair: str | None = None
+    side_banker_pair: str | None = None
     idempotency_key: str | None = None
 
 
@@ -887,6 +905,17 @@ async def baccarat_deal(req: BaccRequest, user: User = Depends(betting_user),
     if req.bet not in ("player", "banker", "tie"):
         raise HTTPException(400, "bet must be player, banker or tie")
     stake_m = _stake_or_400(req.stake, user)
+
+    def _side_stake(v: str | None) -> int:
+        if v is None or Decimal(v or "0") <= 0:
+            return 0
+        m = _stake_or_400(v, user)
+        if m > stake_m:
+            raise HTTPException(400, "a side bet can't exceed your main bet")
+        return m
+
+    side_pp_m = _side_stake(req.side_player_pair)
+    side_bp_m = _side_stake(req.side_banker_pair)
 
     pair = await seeds.active_pair(session, user.id)
     nonce = await seeds.consume_nonce(session, pair)
@@ -909,6 +938,23 @@ async def baccarat_deal(req: BaccRequest, user: User = Depends(betting_user),
                                   f"bc:{rnd.id}:place:{key}")
     await _pay(session, house, wallet, payout, "baccarat_coup", rnd.id,
                f"bc:{rnd.id}:settle:{key}")
+
+    # pair side bets settle off each side's first two cards
+    sides: dict[str, dict] = {}
+    for name, side_m, hand in (("player_pair", side_pp_m, d["player"]),
+                               ("banker_pair", side_bp_m, d["banker"])):
+        if side_m <= 0:
+            continue
+        await _charge(session, user, side_m, "baccarat_side", rnd.id,
+                      f"bc:{rnd.id}:side:{name}:place:{key}")
+        hit = E.bacc_pair(hand[:2])
+        won = payout_micros(side_m, Decimal(E.BACC_PAIR_PAY + 1)) if hit else 0
+        if won:
+            await _pay(session, house, wallet, won, "baccarat_side", rnd.id,
+                       f"bc:{rnd.id}:side:{name}:settle:{key}")
+        sides[name] = {"hit": hit, "pay": E.BACC_PAIR_PAY if hit else 0,
+                       "won": str(from_micros(won))}
+
     balance = await ledger.balance_of(session, wallet.id)
     await session.commit()
     return {"round_id": rnd.id, "nonce": nonce, "bet": req.bet,
@@ -916,7 +962,7 @@ async def baccarat_deal(req: BaccRequest, user: User = Depends(betting_user),
             "banker": [E.card_name(c) for c in d["banker"]],
             "player_total": d["player_total"], "banker_total": d["banker_total"],
             "outcome": d["outcome"], "multiplier": str(mult),
-            "payout": str(from_micros(payout)),
+            "payout": str(from_micros(payout)), "sides": sides,
             "balance": str(from_micros(balance))}
 
 

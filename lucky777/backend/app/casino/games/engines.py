@@ -447,6 +447,15 @@ def baccarat_deal(shoe: list[int]) -> dict:
             "player_total": pt, "banker_total": bt, "outcome": outcome}
 
 
+# pair side bets: the side's FIRST TWO cards share a rank. Eight decks make
+# the odds exact -- P(pair) = 31/415 -- and 12:1 holds 2.89% for the house.
+BACC_PAIR_PAY = 12
+
+
+def bacc_pair(hand: list[int]) -> bool:
+    return hand[0] % 13 == hand[1] % 13
+
+
 def baccarat_pays(bet: str, outcome: str) -> Decimal:
     """Total-return multiplier. Player/banker push on a tie."""
     if bet == "tie":

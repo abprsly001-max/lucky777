@@ -425,8 +425,12 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ game: string; who: string;
     mult: string; won: string }[]>([]);
+  const [tops, setTops] = useState<Record<string, string>>({});
   useEffect(() => {
-    const pull = () => api.casinoHits().then((r) => setHits(r.hits)).catch(() => {});
+    const pull = () => api.casinoHits().then((r) => {
+      setHits(r.hits);
+      setTops(r.tops ?? {});
+    }).catch(() => {});
     pull();
     const t = window.setInterval(pull, 30000);
     return () => window.clearInterval(t);
@@ -660,6 +664,11 @@ function Casino({ onBalance }: { onBalance: (b: string) => void }) {
                   {LOBBY_NEW.has(g.key) && !LOBBY_HOT.has(g.key) && (
                     <span className="absolute right-1.5 top-1.5 rounded-md bg-gradient-to-b from-emerald-400 to-emerald-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-base-900 shadow-pop">
                       New
+                    </span>
+                  )}
+                  {tops[g.key.split(":")[0]] && (
+                    <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[8px] font-black text-accent ring-1 ring-accent/40 backdrop-blur-sm">
+                      ▲ {Number(tops[g.key.split(":")[0]]).toFixed(0)}× today
                     </span>
                   )}
                 </div>
@@ -3671,18 +3680,34 @@ function Roulette({ onBalance, onPlayed }: {
   const [ballRot, setBallRot] = useState(0);
   const [ballDropped, setBallDropped] = useState(false);
   const [rolling, setRolling] = useState(false);
+  // racetrack mode: tapping a number bets it AND its two wheel neighbors
+  // on each side — five straight-up chips in one tap
+  const [neighbors, setNeighbors] = useState(false);
+  const [spins, setSpins] = useState<{ n: number; color: string }[]>([]);
 
   // spot keys: "s:17" straight, "red"/"black"/"even"/"odd"/"low"/"high",
   // "d:0..2" dozens, "c:0..2" columns — chips stack on the felt
   const place = (key: string) => {
     if (busy) return;
     setErr("");
-    if (!placed.has(key) && placed.size >= 15) { setErr("15 spots max per spin"); return; }
+    const keys = (neighbors && key.startsWith("s:"))
+      ? (() => {
+          const i = RL_ORDER.indexOf(Number(key.slice(2)));
+          return [-2, -1, 0, 1, 2].map((off) =>
+            `s:${RL_ORDER[(i + off + RL_ORDER.length) % RL_ORDER.length]}`);
+        })()
+      : [key];
+    const fresh = keys.filter((k) => !placed.has(k)).length;
+    if (placed.size + fresh > 15) { setErr("15 spots max per spin"); return; }
     sfx.chip();
     const n = new Map(placed);
-    n.set(key, (n.get(key) ?? 0) + chip);
+    const h = [...history];
+    for (const k of keys) {
+      n.set(k, (n.get(k) ?? 0) + chip);
+      h.push([k, chip]);
+    }
     setPlaced(n);
-    setHistory([...history, [key, chip]]);
+    setHistory(h);
   };
   const undo = () => {
     const h = [...history];
@@ -3726,6 +3751,7 @@ function Roulette({ onBalance, onPlayed }: {
         setBallDropped(true);
         setRolling(false);
         if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
+        setSpins((s) => [{ n: r.pocket, color: r.color }, ...s].slice(0, 12));
         setLast(r); onBalance(r.balance); onPlayed();
         setPlaced(new Map()); setHistory([]);
         setBusy(false);
@@ -3781,6 +3807,22 @@ function Roulette({ onBalance, onPlayed }: {
           <GameLogo k="roulette" />
           <span className="font-mono text-[10px] text-slate-500">European</span>
         </div>
+
+        {/* the board: the last dozen pockets, hottest ink on the rail */}
+        {spins.length > 0 && (
+          <div className="mb-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-500">Last</span>
+            {spins.map((s, i) => (
+              <span key={i}
+                className={`grid h-6 w-6 shrink-0 place-items-center rounded-full font-mono text-[10px] font-black text-white ring-1 ring-white/25 ${
+                  i === 0 ? "reel-pop " : ""}${
+                  s.color === "red" ? "bg-red-700" : s.color === "black"
+                    ? "bg-neutral-900" : "bg-emerald-600"}`}>
+                {s.n}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* the wheel */}
         <div className="mb-3 grid place-items-center rounded-xl border border-gold/20 bg-[radial-gradient(circle_at_50%_35%,#1d3527,#07130b_75%)] py-4">
@@ -3879,6 +3921,13 @@ function Roulette({ onBalance, onPlayed }: {
               </button>
             ))}
           </div>
+          <button onClick={() => setNeighbors(!neighbors)} disabled={busy}
+            title="Racetrack bet: a number plus its two wheel neighbors each side — five straight-up chips in one tap"
+            className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+              neighbors ? "border-gold bg-gold/20 text-gold shadow-gold"
+                : "border-white/10 bg-base-900 text-slate-300 hover:bg-base-700"}`}>
+            Neighbors
+          </button>
           <button onClick={undo} disabled={busy || history.length === 0}
             className="rounded-lg border border-white/10 bg-base-900 px-3 py-2 text-xs font-bold text-slate-300 hover:bg-base-700 disabled:opacity-40">
             Undo
@@ -4036,6 +4085,8 @@ function Baccarat({ onBalance, onPlayed }: {
 }) {
   const [bet, setBet] = useState<"player" | "banker" | "tie">("banker");
   const [stake, setStake] = useState("10");
+  const [pPair, setPPair] = useState("0");
+  const [bPair, setBPair] = useState("0");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [d, setD] = useState<Awaited<ReturnType<typeof api.baccaratDeal>> | null>(null);
@@ -4043,10 +4094,17 @@ function Baccarat({ onBalance, onPlayed }: {
   async function deal() {
     setErr(""); setBusy(true);
     try {
-      const r = await api.baccaratDeal(bet, stake);
+      const r = await api.baccaratDeal(bet, stake,
+        pPair !== "0" ? pPair : undefined, bPair !== "0" ? bPair : undefined);
       setD(r); onBalance(r.balance); onPlayed();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
+
+  type PairRow = [string, string, (v: string) => void, string];
+  const pairRows: PairRow[] = [
+    ["Player Pair 12:1", pPair, setPPair, "text-sky-300"],
+    ["Banker Pair 12:1", bPair, setBPair, "text-red-300"],
+  ];
 
   const side = (label: string, cards: string[], total: number, winner: boolean, tone: string, off = 0) => (
     <div className={`flex-1 rounded-lg border p-3 text-center ${
@@ -4074,7 +4132,7 @@ function Baccarat({ onBalance, onPlayed }: {
             {side("Player", d.player, d.player_total, d.outcome === "player", "text-sky-300")}
             {side("Banker", d.banker, d.banker_total, d.outcome === "banker", "text-red-300", 3)}
           </div>
-          <div className={`mb-3 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
+          <div className={`mb-2 rounded-lg border px-3 py-2 text-center text-sm font-bold ${
             Number(d.payout) > Number(d.multiplier === "1" ? "0" : "0") && Number(d.payout) > 0
               ? Number(d.multiplier) > 1
                 ? "border-accent/40 bg-accent/10 text-accent"
@@ -4085,10 +4143,23 @@ function Baccarat({ onBalance, onPlayed }: {
               ? Number(d.multiplier) === 1 ? " — push, stake back" : ` — paid ${money(d.payout)}`
               : " — house takes it"}
           </div>
+          {d.sides && Object.keys(d.sides).length > 0 && (
+            <div className="mb-3 flex flex-wrap justify-center gap-1.5">
+              {Object.entries(d.sides).map(([k, s]) => (
+                <span key={k}
+                  className={`rounded-md px-2 py-1 text-[10px] font-black uppercase tracking-wide ${
+                    s.hit ? "reel-pop bg-gold/20 text-gold ring-1 ring-gold/50"
+                      : "bg-black/30 text-slate-500"}`}>
+                  {k === "player_pair" ? "Player Pair" : "Banker Pair"}:{" "}
+                  {s.hit ? `${s.pay}:1 +${money(s.won)}` : "no pair"}
+                </span>
+              ))}
+            </div>
+          )}
         </>
       )}
 
-      <div className="mb-3 grid grid-cols-3 gap-1.5 text-center text-xs font-bold">
+      <div className="mb-2 grid grid-cols-3 gap-1.5 text-center text-xs font-bold">
         {([["player", "Player 1:1", "text-sky-300"], ["banker", "Banker 0.95:1", "text-red-300"],
            ["tie", "Tie 8:1", "text-gold"]] as const).map(([id, label, tone]) => (
           <button key={id} onClick={() => setBet(id)}
@@ -4097,6 +4168,25 @@ function Baccarat({ onBalance, onPlayed }: {
                 : "border-white/10 bg-base-900/50 text-slate-400 hover:border-white/25"}`}>
             {label}
           </button>
+        ))}
+      </div>
+
+      {/* pair side bets: the side's first two cards match ranks, 12:1 */}
+      <div className="mb-3 grid grid-cols-2 gap-1.5">
+        {pairRows.map(([label, val, set, tone]) => (
+          <div key={label} className="flex items-center justify-between rounded-lg border border-white/10 bg-base-900/50 px-2 py-1.5">
+            <span className={`text-[10px] font-black uppercase tracking-wide ${tone}`}>{label}</span>
+            <div className="flex gap-1">
+              {["0", "1", "5", "10"].map((v) => (
+                <button key={v} onClick={() => set(v)}
+                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                    val === v ? "btn-gold text-base-900"
+                      : "bg-base-700 text-slate-300 hover:bg-base-600"}`}>
+                  {v === "0" ? "—" : v}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 

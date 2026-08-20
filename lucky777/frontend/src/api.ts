@@ -329,11 +329,14 @@ export const api = {
   vpActive: () =>
     request<{ active: { round_id: number; hand: string[]; stake: string;
                         paytable: [string, string][] } | null }>("/api/casino/vp/active"),
-  baccaratDeal: (bet: string, stake: string) =>
+  baccaratDeal: (bet: string, stake: string, pPair?: string, bPair?: string) =>
     request<{ round_id: number; bet: string; player: string[]; banker: string[];
               player_total: number; banker_total: number; outcome: string;
-              multiplier: string; payout: string; balance: string }>(
-      "/api/casino/baccarat/deal", { method: "POST", body: JSON.stringify({ bet, stake }) }),
+              multiplier: string; payout: string; balance: string;
+              sides?: Record<string, { hit: boolean; pay: number; won: string }> }>(
+      "/api/casino/baccarat/deal", { method: "POST",
+        body: JSON.stringify({ bet, stake,
+          side_player_pair: pPair ?? null, side_banker_pair: bPair ?? null }) }),
   minesStart: (stake: string, mines: number) =>
     request<MinesState>("/api/casino/mines/start", {
       method: "POST", body: JSON.stringify({ stake, mines }) }),
@@ -560,7 +563,8 @@ export const api = {
       method: "POST", body: JSON.stringify({ stake,
         side_21p3: side21p3 ?? null, side_lucky: sideLucky ?? null }) }),
   casinoHits: () =>
-    request<{ hits: { game: string; who: string; mult: string; won: string }[] }>(
+    request<{ hits: { game: string; who: string; mult: string; won: string }[];
+              tops?: Record<string, string> }>(
       "/api/casino/recent-hits"),
   bjAction: (roundId: number, action: "hit" | "stand" | "double") =>
     request<BjHand>(`/api/casino/blackjack/${roundId}/action`, {
