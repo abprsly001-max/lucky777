@@ -312,10 +312,17 @@ def roulette_pocket(server: str, client: str, nonce: int) -> int:
     return min(36, int(f * 37))
 
 
-def roulette_pays(kind: str, pick: int | None, pocket: int) -> Decimal:
+def roulette_pays(kind: str, pick: int | None, pocket: int,
+                  picks: list[int] | None = None) -> Decimal:
     """Total-return multiplier for one bet. 0 means the bet lost."""
     if kind == "straight":
         return Decimal(36) if pocket == pick else Decimal(0)
+    # inside bets on the line: a chip covering a set of numbers pays the fair
+    # single-zero price for that many pockets (split 17:1, street 11:1,
+    # corner 8:1, six-line 5:1) — the house keeps the same 2.7% either way.
+    if kind in ROULETTE_INSIDE:
+        nums = picks or []
+        return (Decimal(36) / ROULETTE_INSIDE[kind]) if pocket in nums else Decimal(0)
     if pocket == 0:
         return Decimal(0)                       # zero beats every outside bet
     if kind == "red":
@@ -337,8 +344,12 @@ def roulette_pays(kind: str, pick: int | None, pocket: int) -> Decimal:
     raise ValueError(f"unknown roulette bet {kind}")
 
 
+# inside "combo" bets and how many numbers each covers; the payout is
+# 36 / count total return, i.e. the fair single-zero odds.
+ROULETTE_INSIDE = {"split": 2, "street": 3, "corner": 4, "line": 6}
+
 ROULETTE_KINDS = ("straight", "red", "black", "even", "odd", "low", "high",
-                  "dozen", "column")
+                  "dozen", "column", "split", "street", "corner", "line")
 
 
 # ------------------------------------------------------------ video poker ----

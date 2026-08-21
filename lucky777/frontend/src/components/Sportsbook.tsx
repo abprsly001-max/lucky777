@@ -122,7 +122,7 @@ export default function Sportsbook({ onBalance, isAdmin, onCasino, onHorses }: {
     const out = new Map<string, { name: string; icon: string; live: boolean;
       leagues: Map<string, { name: string; count: number; live: boolean }> }>();
     for (const ev of gameEvents) {
-      const s = out.get(ev.sport) ?? { name: ev.sport_name, icon: ev.icon,
+      const s = out.get(ev.sport) ?? { name: ev.sport_name === "Am. Football" ? "Football" : ev.sport_name, icon: ev.icon,
         live: false, leagues: new Map() };
       const l = s.leagues.get(ev.competition_key) ?? { name: ev.competition, count: 0, live: false };
       l.count += 1;
@@ -1118,7 +1118,7 @@ function LiveBoard({ events, selected, onPick, onOpen }: {
   const sports = useMemo(() => {
     const seen = new Map<string, { name: string; icon: string; n: number }>();
     for (const e of events) {
-      const s = seen.get(e.sport) ?? { name: e.sport_name, icon: e.icon, n: 0 };
+      const s = seen.get(e.sport) ?? { name: e.sport_name === "Am. Football" ? "Football" : e.sport_name, icon: e.icon, n: 0 };
       s.n += 1;
       seen.set(e.sport, s);
     }
@@ -1786,7 +1786,7 @@ function ClassicBoard({ events, futures = [], picks, onToggle, onRefresh,
   const sports = useMemo(() => {
     const seen = new Map<string, { name: string; icon: string; n: number }>();
     for (const e of upcoming) {
-      const x = seen.get(e.sport) ?? { name: e.sport_name, icon: e.icon, n: 0 };
+      const x = seen.get(e.sport) ?? { name: e.sport_name === "Am. Football" ? "Football" : e.sport_name, icon: e.icon, n: 0 };
       x.n += 1;
       seen.set(e.sport, x);
     }

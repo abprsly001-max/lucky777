@@ -314,7 +314,7 @@ export const api = {
     request<{ round_id: number; rows: number; risk: string; path: number[];
               bucket: number; multiplier: string; payout: string; balance: string }>(
       "/api/casino/plinko/drop", { method: "POST", body: JSON.stringify({ stake, rows, risk }) }),
-  rouletteSpin: (bets: { kind: string; pick?: number | null; stake: string }[]) =>
+  rouletteSpin: (bets: { kind: string; pick?: number | null; picks?: number[]; stake: string }[]) =>
     request<{ round_id: number; nonce: number; pocket: number; color: string;
               payout: string; balance: string }>(
       "/api/casino/roulette/spin", { method: "POST", body: JSON.stringify({ bets }) }),

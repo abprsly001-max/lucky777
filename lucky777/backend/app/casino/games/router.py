@@ -740,6 +740,7 @@ async def bj_active(user: User = Depends(current_user),
 class RouletteBet(BaseModel):
     kind: str
     pick: int | None = None
+    picks: list[int] | None = None      # split/street/corner/line: the numbers
     stake: str
 
 
@@ -762,22 +763,31 @@ async def roulette_spin(req: RouletteRequest, user: User = Depends(betting_user)
             raise HTTPException(400, "straight bets pick a number 0-36")
         if b.kind in ("dozen", "column") and not (b.pick is not None and 0 <= b.pick <= 2):
             raise HTTPException(400, f"{b.kind} bets pick 0, 1 or 2")
-        parsed.append((b.kind, b.pick, _stake_or_400(b.stake, user)))
-    total = sum(s for _, _, s in parsed)
+        picks = None
+        if b.kind in E.ROULETTE_INSIDE:
+            need = E.ROULETTE_INSIDE[b.kind]
+            picks = b.picks or []
+            if (len(picks) != need or len(set(picks)) != need
+                    or any(not (0 <= n <= 36) for n in picks)):
+                raise HTTPException(
+                    400, f"{b.kind} bets cover {need} distinct numbers 0-36")
+        parsed.append((b.kind, b.pick, picks, _stake_or_400(b.stake, user)))
+    total = sum(t[3] for t in parsed)
 
     pair = await seeds.active_pair(session, user.id)
     nonce = await seeds.consume_nonce(session, pair)
     pocket = E.roulette_pocket(pair.server_seed, pair.client_seed, nonce)
-    payout = sum(payout_micros(s, E.roulette_pays(k, p, pocket))
-                 for k, p, s in parsed)
+    payout = sum(payout_micros(s, E.roulette_pays(k, p, pocket, picks))
+                 for k, p, picks, s in parsed)
 
     rnd = CasinoRound(game="roulette", user_id=user.id, seed_pair_id=pair.id,
                       nonce=nonce, stake_micros=total, payout_micros=payout,
                       outcome="win" if payout > 0 else "lose",
                       detail=json.dumps({"pocket": pocket,
                                          "bets": [{"kind": k, "pick": p,
+                                                   "picks": pk,
                                                    "stake": str(from_micros(s))}
-                                                  for k, p, s in parsed]}))
+                                                  for k, p, pk, s in parsed]}))
     session.add(rnd)
     await session.flush()
 

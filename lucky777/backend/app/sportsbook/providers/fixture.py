@@ -32,11 +32,11 @@ CATALOG = [
     ("soccer", "Soccer", "⚽", "mls", "MLS", "USA", True, [
         "Inter Miami", "LAFC", "Seattle Sounders", "Atlanta United",
         "Columbus Crew", "Philadelphia Union"]),
-    ("americanfootball", "Am. Football", "🏈", "nfl", "NFL", "USA", False, [
+    ("americanfootball", "Football", "🏈", "nfl", "NFL", "USA", False, [
         "Kansas City Chiefs", "San Francisco 49ers", "Baltimore Ravens", "Buffalo Bills",
         "Philadelphia Eagles", "Detroit Lions", "Dallas Cowboys", "Miami Dolphins",
         "Green Bay Packers", "Cincinnati Bengals"]),
-    ("americanfootball", "Am. Football", "🏈", "ncaaf", "NCAA Football", "USA", False, [
+    ("americanfootball", "Football", "🏈", "ncaaf", "NCAA Football", "USA", False, [
         "Georgia", "Michigan", "Alabama", "Ohio State", "Texas", "Oregon"]),
     ("basketball", "Basketball", "🏀", "nba", "NBA", "USA", False, [
         "Boston Celtics", "Denver Nuggets", "Milwaukee Bucks", "Phoenix Suns",

@@ -29,7 +29,7 @@ BASE = "https://api.the-odds-api.com/v4"
 # their sport keys -> our display grouping
 SPORT_GROUPS = {
     "soccer": ("soccer", "Soccer", "⚽"),
-    "americanfootball": ("americanfootball", "Am. Football", "🏈"),
+    "americanfootball": ("americanfootball", "Football", "🏈"),
     "basketball": ("basketball", "Basketball", "🏀"),
     "baseball": ("baseball", "Baseball", "⚾"),
     "icehockey": ("icehockey", "Ice Hockey", "🏒"),

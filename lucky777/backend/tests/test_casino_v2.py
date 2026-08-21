@@ -27,6 +27,25 @@ def test_roulette_pocket_is_uniform_enough():
     assert min(hits) > 100 and max(hits) < 320
 
 
+def test_roulette_inside_bets_keep_the_edge():
+    # split/street/corner/line: summed over all 37 pockets it is exactly 36,
+    # i.e. the same 36/37 RTP as every other bet — house keeps its 2.7%.
+    for kind, nums in [("split", [1, 2]), ("split", [0, 3]),
+                       ("street", [1, 2, 3]), ("corner", [1, 2, 4, 5]),
+                       ("line", [1, 2, 3, 4, 5, 6])]:
+        total = sum(E.roulette_pays(kind, None, p, nums) for p in range(37))
+        assert total == Decimal(36), (kind, total)
+
+
+def test_roulette_inside_bets_pay_the_right_price():
+    assert E.roulette_pays("split", None, 2, [1, 2]) == Decimal(18)    # 17:1
+    assert E.roulette_pays("split", None, 9, [1, 2]) == 0
+    assert E.roulette_pays("street", None, 3, [1, 2, 3]) == Decimal(12)  # 11:1
+    assert E.roulette_pays("corner", None, 5, [1, 2, 4, 5]) == Decimal(9)  # 8:1
+    assert E.roulette_pays("line", None, 6, [1, 2, 3, 4, 5, 6]) == Decimal(6)  # 5:1
+    assert E.roulette_pays("split", None, 0, [0, 1]) == Decimal(18)    # 0-split wins on 0
+
+
 # ------------------------------------------------------------ video poker ----
 def C(rank: int, suit: int) -> int:
     return suit * 13 + rank

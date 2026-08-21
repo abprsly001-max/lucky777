@@ -1187,30 +1187,41 @@ function Darts({ def, onBalance, onPlayed }: {
 }) {
   const [stake, setStake] = useState("10");
   const [bet, setBet] = useState("middle");
-  const [landed, setLanded] = useState<string | null>(null);
+  const [dart, setDart] = useState<{ x: number; y: number } | null>(null);
+  const [flying, setFlying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  const RING_COLOR: Record<string, string> = {
-    bullseye: "fill-red-500", inner: "fill-gold", middle: "fill-emerald-500", outer: "fill-sky-600",
-  };
+  // each ring: outer radius, band colour, and a bright rim — a real target
+  const RINGS = [
+    { r: "outer", ro: 58, fill: "#1f6feb", rim: "#7cb8ff" },
+    { r: "middle", ro: 43, fill: "#10b981", rim: "#8ff0cf" },
+    { r: "inner", ro: 28, fill: "#f59e0b", rim: "#ffdf8a" },
+    { r: "bullseye", ro: 13, fill: "#ef4444", rim: "#ffd0d0" },
+  ] as const;
+  const RING_MID: Record<string, number> = { outer: 50, middle: 35, inner: 20, bullseye: 6 };
 
   async function throwDart() {
-    setErr(""); setBusy(true); setMsg(null); setLanded(null);
+    setErr(""); setBusy(true); setMsg(null); setDart(null);
+    setFlying(true);
     try {
       sfx.spin();
       const r = await api.dartsThrow(stake, bet);
-      await new Promise((res) => setTimeout(res, 500));
+      await new Promise((res) => setTimeout(res, 550));
+      // land the dart at a random angle inside whatever ring it hit
+      const ang = Math.random() * Math.PI * 2;
+      const rad = RING_MID[r.landed] ?? 30;
+      setDart({ x: 60 + rad * Math.cos(ang), y: 60 + rad * Math.sin(ang) });
+      setFlying(false);
       sfx.land();
-      setLanded(r.landed); onBalance(r.balance); onPlayed();
+      onBalance(r.balance); onPlayed();
       if (Number(r.payout) > 0) sfx.win(); else sfx.lose();
       setMsg(Number(r.payout) > 0
         ? `🎯 ${r.landed.toUpperCase()} — paid ${money(r.payout)}`
-        : `Landed ${r.landed} — no good`);
-    } catch (e: any) { setErr(e.message); }
+        : `Landed on ${r.landed} — you called ${bet}`);
+    } catch (e: any) { setErr(e.message); setFlying(false); }
     finally { setBusy(false); }
   }
-  const rings = [["outer", 56], ["middle", 40], ["inner", 24], ["bullseye", 10]] as const;
   return (
     <QuickShell title="🎯 Darts" msg={msg} err={err}
       note="Call your ring before the throw — tighter rings pay true odds."
@@ -1219,15 +1230,28 @@ function Darts({ def, onBalance, onPlayed }: {
         <button onClick={throwDart} disabled={busy} className={GOLD_BTN}>Throw</button>
       </>}>
       <div className="grid place-items-center rounded-xl border border-red-500/25 bg-gradient-to-b from-[#2e0808] via-[#170404] to-black py-3">
-        <svg viewBox="0 0 120 120" className="h-36 w-36">
-          {rings.map(([r, rad]) => (
-            <circle key={r} cx="60" cy="60" r={rad}
-              className={`${RING_COLOR[r]} ${landed === r ? "opacity-100" : "opacity-40"}`}
-              stroke="#0b0e14" strokeWidth="2" />
+        <svg viewBox="0 0 120 120" className="h-40 w-40">
+          <circle cx="60" cy="60" r="59" fill="#0b0e14" stroke="#3a3f4b" strokeWidth="1.5" />
+          {RINGS.map(({ r, ro, fill, rim }) => (
+            <circle key={r} cx="60" cy="60" r={ro} fill={fill}
+              stroke={bet === r ? "#ffffff" : rim}
+              strokeWidth={bet === r ? 2.4 : 1}
+              className={bet === r ? "[filter:drop-shadow(0_0_3px_rgba(255,255,255,0.9))]" : ""} />
           ))}
-          {landed && <text x="60" y="14" textAnchor="middle" fontSize="12">🎯</text>}
+          {/* crosshair lines, faint */}
+          <g stroke="#0b0e14" strokeWidth="1" opacity="0.35">
+            <line x1="60" y1="4" x2="60" y2="116" /><line x1="4" y1="60" x2="116" y2="60" />
+          </g>
+          {/* the dart, stuck where it landed */}
+          {dart && (
+            <g className="vs-seat">
+              <circle cx={dart.x} cy={dart.y} r="3.4" fill="#0b0e14" stroke="#fff" strokeWidth="1" />
+              <circle cx={dart.x} cy={dart.y} r="1.4" fill="#fde047" />
+            </g>
+          )}
         </svg>
       </div>
+      {flying && <p className="mt-1 text-center text-[11px] text-slate-400">…dart in the air…</p>}
       <div className="mt-2 grid grid-cols-4 gap-1.5">
         {def.rings.map(({ ring, mult }) => (
           <button key={ring} onClick={() => setBet(ring)} disabled={busy} className={PICK_BTN(bet === ring)}>
@@ -3787,6 +3811,12 @@ function Roulette({ onBalance, onPlayed }: {
   const toBets = (m: Map<string, number>) =>
     [...m.entries()].map(([key, amt]) => {
       const [k, p] = key.split(":");
+      // inside "line" bets carry their numbers: sp=split, co=corner, st=street, ln=six-line
+      if (k === "sp" || k === "co" || k === "st" || k === "ln") {
+        const kind = k === "sp" ? "split" : k === "co" ? "corner"
+          : k === "st" ? "street" : "line";
+        return { kind, pick: null, picks: p.split("-").map(Number), stake: String(amt) };
+      }
       const kind = k === "s" ? "straight" : k === "d" ? "dozen" : k === "c" ? "column" : k;
       return { kind, pick: p !== undefined ? Number(p) : null, stake: String(amt) };
     });
@@ -3841,10 +3871,16 @@ function Roulette({ onBalance, onPlayed }: {
 
   const Spot = ({ k, className, style, children }: {
     k: string; className: string; style?: React.CSSProperties;
-    children: React.ReactNode;
+    children?: React.ReactNode;
   }) => {
     const amt = placed.get(k);
-    const isWin = last && !rolling && k === `s:${last.pocket}`;
+    // a spot wins if it's the straight number, or a line bet whose set holds it
+    const isWin = last && !rolling && (() => {
+      if (k === `s:${last.pocket}`) return true;
+      const [kind, nums] = k.split(":");
+      return ["sp", "co", "st", "ln"].includes(kind)
+        && nums.split("-").map(Number).includes(last.pocket);
+    })();
     return (
       <button onClick={() => place(k)} style={style}
         className={`relative transition hover:brightness-125 ${className} ${
@@ -3929,26 +3965,69 @@ function Roulette({ onBalance, onPlayed }: {
 
         {/* the felt */}
         <div className="overflow-x-auto rounded-xl border border-emerald-700/60 bg-[radial-gradient(circle_at_50%_20%,#14532d,#0b3320_60%,#072415_100%)] p-3 shadow-[inset_0_2px_16px_rgba(0,0,0,0.5)]">
-          <div className="min-w-[560px]">
-            <div className="grid" style={{ gridTemplateColumns: "36px repeat(12, 1fr) 44px" }}>
-              {/* zero rail, tall against all three rows */}
-              <Spot k="s:0" className={`${cell} h-auto rounded-l-lg bg-green-700/90`}
-                style={{ gridRow: "1 / span 3", gridColumn: 1 }}>0</Spot>
-              {/* each table row: its 12 numbers, then its 2:1 box */}
-              {[3, 2, 1].map((rowStart, i) => (
-                <React.Fragment key={rowStart}>
-                  {Array.from({ length: 12 }, (_, j) => rowStart + j * 3).map((n) => (
-                    <Spot key={n} k={`s:${n}`} className={numCls(n)}>{n}</Spot>
-                  ))}
-                  <Spot k={`c:${rowStart - 1}`}
-                    className={`${cell} bg-emerald-800/70 ${i === 0 ? "rounded-tr-lg" : ""} ${i === 2 ? "rounded-br-lg" : ""}`}>
-                    2:1
-                  </Spot>
-                </React.Fragment>
-              ))}
+          <div className="min-w-[700px]">
+            {/* the numbers plus the thin betting lines between them: a chip in
+                a gap is a split, on a cross is a corner, along the bottom rail
+                a street/six-line — every inside bet, right on the felt */}
+            <div className="grid" style={{
+              gridTemplateColumns: `34px 1fr ${"14px 1fr ".repeat(11)}42px`,
+              gridTemplateRows: "36px 14px 36px 14px 36px 16px",
+            }}>
+              {(() => {
+                const val = (r: number, c: number) => (3 - r) + 3 * c;
+                const LINE = "min-h-0 min-w-0 rounded-[3px] bg-emerald-200/[0.04] hover:bg-gold/40 hover:ring-1 hover:ring-gold/60";
+                const els: React.ReactNode[] = [];
+                // zero, tall against every row
+                els.push(<Spot key="z" k="s:0"
+                  className={`${cell} h-auto rounded-l-lg bg-green-700/90`}
+                  style={{ gridRow: "1 / span 6", gridColumn: 1 }}>0</Spot>);
+                // the 36 numbers
+                for (let r = 0; r < 3; r++) for (let c = 0; c < 12; c++) {
+                  const n = val(r, c);
+                  els.push(<Spot key={`n${n}`} k={`s:${n}`} className={numCls(n)}
+                    style={{ gridRow: 1 + 2 * r, gridColumn: 2 + 2 * c }}>{n}</Spot>);
+                }
+                // the three 2:1 column boxes on the right rail
+                for (let r = 0; r < 3; r++) {
+                  els.push(<Spot key={`col${2 - r}`} k={`c:${2 - r}`}
+                    className={`${cell} h-auto bg-emerald-800/70 text-[10px] ${r === 0 ? "rounded-tr-lg" : ""} ${r === 2 ? "rounded-br-lg" : ""}`}
+                    style={{ gridColumn: 25, gridRow: `${1 + 2 * r} / span 2` }}>2:1</Spot>);
+                }
+                // splits on vertical lines (side-by-side numbers, 17:1)
+                for (let r = 0; r < 3; r++) for (let c = 0; c < 11; c++) {
+                  const s = [val(r, c), val(r, c + 1)].sort((a, b) => a - b);
+                  els.push(<Spot key={`spv${s[0]}_${s[1]}`} k={`sp:${s[0]}-${s[1]}`}
+                    className={LINE} style={{ gridColumn: 3 + 2 * c, gridRow: 1 + 2 * r }} />);
+                }
+                // splits on horizontal lines (stacked numbers, 17:1)
+                for (let r = 0; r < 2; r++) for (let c = 0; c < 12; c++) {
+                  const s = [val(r, c), val(r + 1, c)].sort((a, b) => a - b);
+                  els.push(<Spot key={`sph${s[0]}_${s[1]}`} k={`sp:${s[0]}-${s[1]}`}
+                    className={LINE} style={{ gridColumn: 2 + 2 * c, gridRow: 2 + 2 * r }} />);
+                }
+                // corners where four numbers meet (8:1)
+                for (let r = 0; r < 2; r++) for (let c = 0; c < 11; c++) {
+                  const s = [val(r, c), val(r, c + 1), val(r + 1, c), val(r + 1, c + 1)].sort((a, b) => a - b);
+                  els.push(<Spot key={`co${s.join("_")}`} k={`co:${s.join("-")}`}
+                    className={LINE} style={{ gridColumn: 3 + 2 * c, gridRow: 2 + 2 * r }} />);
+                }
+                // streets along the bottom rail (a column of three, 11:1)
+                for (let c = 0; c < 12; c++) {
+                  const s = [1 + 3 * c, 2 + 3 * c, 3 + 3 * c];
+                  els.push(<Spot key={`st${c}`} k={`st:${s.join("-")}`}
+                    className={`${LINE} bg-emerald-200/[0.07]`} style={{ gridColumn: 2 + 2 * c, gridRow: 6 }} />);
+                }
+                // six-lines on the bottom crosses (two streets, 5:1)
+                for (let c = 0; c < 11; c++) {
+                  const s = [1, 2, 3, 4, 5, 6].map((k) => k + 3 * c);
+                  els.push(<Spot key={`ln${c}`} k={`ln:${s.join("-")}`}
+                    className={`${LINE} bg-emerald-200/[0.07]`} style={{ gridColumn: 3 + 2 * c, gridRow: 6 }} />);
+                }
+                return els;
+              })()}
             </div>
             {/* dozens */}
-            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "36px repeat(3, 1fr) 44px" }}>
+            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "34px repeat(3, 1fr) 42px" }}>
               <span />
               {[0, 1, 2].map((d) => (
                 <Spot key={d} k={`d:${d}`} className={`${cell} bg-emerald-800/70`}>
@@ -3958,7 +4037,7 @@ function Roulette({ onBalance, onPlayed }: {
               <span />
             </div>
             {/* the outside line */}
-            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "36px repeat(6, 1fr) 44px" }}>
+            <div className="mt-1 grid gap-0" style={{ gridTemplateColumns: "34px repeat(6, 1fr) 42px" }}>
               <span />
               <Spot k="low" className={`${cell} rounded-bl-lg bg-emerald-800/70`}>1–18</Spot>
               <Spot k="even" className={`${cell} bg-emerald-800/70`}>EVEN</Spot>
@@ -3970,6 +4049,11 @@ function Roulette({ onBalance, onPlayed }: {
             </div>
           </div>
         </div>
+
+        <p className="mt-2 text-center text-[10px] text-slate-500">
+          Tap a number for a straight-up · tap the lines between numbers for splits &amp; corners ·
+          the bottom rail for streets &amp; six-lines
+        </p>
 
         {/* the rack: pick a chip, work the table */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -4810,6 +4894,9 @@ function Blackjack({ onBalance, onPlayed }: {
     pay: number; won: string }> | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // hold the hand totals back until the cards have finished landing, so the
+  // number never shows before the card is actually on the felt
+  const [reveal, setReveal] = useState(false);
 
   const SIDE_LABEL: Record<string, string> = {
     straight_flush: "Straight Flush", trips: "Three of a Kind",
@@ -4821,6 +4908,19 @@ function Blackjack({ onBalance, onPlayed }: {
   useEffect(() => {
     api.bjActive().then((r) => { if (r.active) setHand(r.active); }).catch(() => {});
   }, []);
+
+  // whenever cards change, hide the totals and bring them back only once the
+  // last card has flown in and flipped (deal-fly + deal-flip finish ~i*150+450)
+  const pc = hand?.player.length ?? 0;
+  const dc = hand?.dealer.length ?? 0;
+  const rid = hand?.round_id ?? 0;
+  useEffect(() => {
+    if (!hand) { setReveal(false); return; }
+    setReveal(false);
+    const lastIdx = Math.max(pc > 0 ? pc - 1 + 2 : 0, dc > 0 ? dc - 1 : 0);
+    const t = window.setTimeout(() => setReveal(true), lastIdx * 150 + 570);
+    return () => window.clearTimeout(t);
+  }, [pc, dc, rid, hand]);
 
   const done = hand?.status === "settled";
   async function run(fn: () => Promise<import("../api").BjHand>) {
@@ -4869,13 +4969,13 @@ function Blackjack({ onBalance, onPlayed }: {
           <div className="pointer-events-none absolute inset-x-8 top-16 h-24 rounded-[50%] border border-gold/15" />
           <div className="relative">
             <div className="mb-1 text-[10px] uppercase tracking-wide text-emerald-200/60">
-              Dealer {hand.dealer_total !== null && `— ${hand.dealer_total}`}
+              Dealer{reveal && hand.dealer_total !== null ? ` — ${hand.dealer_total}` : ""}
             </div>
             <div className="flex gap-1.5"><DealtHand cards={hand.dealer} /></div>
           </div>
           <div className="relative">
             <div className="mb-1 text-[10px] uppercase tracking-wide text-emerald-200/60">
-              You — {hand.player_total}{hand.doubled ? " · doubled" : ""}
+              You{reveal ? ` — ${hand.player_total}${hand.doubled ? " · doubled" : ""}` : ""}
             </div>
             <div className="flex gap-1.5"><DealtHand cards={hand.player} offset={2} /></div>
           </div>
