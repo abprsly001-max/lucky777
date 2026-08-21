@@ -764,6 +764,70 @@ function ShadesFace() {
   );
 }
 
+function BananaFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[74%] w-[74%]">
+      <path d="M10 14c1 12 9 22 22 24 4 .6 8-.2 9-3-6 1-11-1-16-6-6-6-9-12-9-19-3 1-6 1-6 4z"
+        fill="#f4c430" stroke="#b8860b" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M12 12c1 11 8 21 20 23" fill="none" stroke="#fde68a" strokeWidth="1.6"
+        opacity="0.7" />
+      <path d="M40 34c1.5 1 2.5 1 3.5-.5-1 .2-2 0-3-1z" fill="#6b4a1b" />
+      <path d="M9 12l1-3 3-1" fill="none" stroke="#4d3312" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AppleFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[76%] w-[76%]">
+      <path d="M24 12c-3-3-9-3-12 1-3 4-2 12 2 18 3 4 6 6 10 6s7-2 10-6c4-6 5-14 2-18-3-4-9-4-12-1z"
+        fill="#d81f3d" stroke="#7d0f22" strokeWidth="1.3" />
+      <path d="M17 16c-2 2-2 6 0 10" fill="none" stroke="#ff8fa3" strokeWidth="2.4"
+        strokeLinecap="round" opacity="0.8" />
+      <path d="M24 12c0-3 1-6 4-7" fill="none" stroke="#5b3a1a" strokeWidth="2"
+        strokeLinecap="round" />
+      <path d="M27 7c3-1 5 0 6 2-2 1.6-4.6 1-6-2z" fill="#3aa845" />
+    </svg>
+  );
+}
+
+function HeartFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[74%] w-[74%]">
+      <defs>
+        <linearGradient id="heartg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ff6b8b" /><stop offset="1" stopColor="#b3123b" />
+        </linearGradient>
+      </defs>
+      <path d="M24 42C10 32 5 24 5 17 5 11 9 7 14.5 7 18 7 21 9 24 13c3-4 6-6 9.5-6C39 7 43 11 43 17c0 7-5 15-19 25z"
+        fill="url(#heartg)" stroke="#7d0f22" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M14 13c-3 1-4 4-3.5 8" fill="none" stroke="#ffc2cf" strokeWidth="2.4"
+        strokeLinecap="round" opacity="0.85" />
+    </svg>
+  );
+}
+
+function LollipopFace() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-[80%] w-[80%] [filter:drop-shadow(0_0_7px_rgba(244,114,182,0.8))]">
+      <rect x="22.6" y="24" width="2.8" height="20" rx="1.4" fill="#e5e7eb" />
+      <circle cx="24" cy="18" r="14" fill="#f472b6" />
+      <path d="M24 18 m0 -14 a14 14 0 0 1 12 7 a10 10 0 0 0 -12 -3 a7 7 0 0 1 4 -4z"
+        fill="#fbcfe8" opacity="0.9" />
+      <path d="M24 4a14 14 0 0 1 12 21 14 14 0 0 0 -8 -18 14 14 0 0 1 -4 -3z"
+        fill="#db2777" opacity="0.7" />
+      <circle cx="19" cy="12" r="3" fill="#fff" opacity="0.55" />
+    </svg>
+  );
+}
+
+const GEM_COLORS: Record<string, [string, string, string]> = {
+  blue: ["#e0f2fe", "#7dd3fc", "#0284c7"],
+  green: ["#dcfce7", "#4ade80", "#15803d"],
+  purple: ["#ede9fe", "#c4b5fd", "#7c3aed"],
+  red: ["#fee2e2", "#fca5a5", "#dc2626"],
+};
+
 /** the drawn face for a symbol id, or null when only a glyph exists */
 export function SymbolFace({ sym, size = "", stone = false }: {
   sym: string; size?: string; stone?: boolean;
@@ -800,8 +864,16 @@ export function SymbolFace({ sym, size = "", stone = false }: {
   if (sym === "cherry") return wrap(<CherryFace />);
   if (sym === "star") return wrap(<StarFace />);
   if (sym === "scatter") return wrap(<StarFace glow />);
+  if (sym === "lollipop") return wrap(<LollipopFace />);
   if (sym === "coin") return wrap(<CoinFace />);
   if (sym === "crown") return wrap(<CrownFace />);
+  if (sym === "banana") return wrap(<BananaFace />);
+  if (sym === "apple") return wrap(<AppleFace />);
+  if (sym === "heart") return wrap(<HeartFace />);
+  if (sym in GEM_COLORS) {
+    const [f, m, t] = GEM_COLORS[sym];
+    return wrap(<GemFace from={f} mid={m} to={t} />);
+  }
   if (["lemon", "orange", "grapes", "grape", "plum", "berry", "melon"].includes(sym)) {
     return wrap(<FruitFace kind={sym === "grape" ? "grapes" : sym} />);
   }

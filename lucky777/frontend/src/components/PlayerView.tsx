@@ -1005,8 +1005,8 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
                     {Number(v) >= 1 ? `${Number(v).toFixed(Number(v) % 1 ? 1 : 0)}x` : `${Number(v).toFixed(2)}x`}
                   </span>
                 ) : (
-                  <span className="text-xl opacity-70 drop-shadow-[0_2px_3px_rgba(0,0,0,0.7)]">
-                    {PB_SYMS[(i * 7 + spinSeq * 5) % PB_SYMS.length]}
+                  <span className="grid h-9 w-9 place-items-center opacity-75 [filter:drop-shadow(0_2px_3px_rgba(0,0,0,0.7))]">
+                    {SymbolFace({ sym: PB_SYMS[(i * 7 + spinSeq * 5) % PB_SYMS.length] })}
                   </span>
                 )}
               </div>
@@ -2297,38 +2297,35 @@ function HiLo({ onBalance, onPlayed }: {
 const TB_FRUIT: Record<string, string> = {
   banana: "🍌", grape: "🍇", melon: "🍉", plum: "🍑", apple: "🍎", heart: "❤️",
 };
-const TB_GEM: Record<string, string> = {
-  blue: "from-sky-300 to-blue-600",
-  green: "from-emerald-300 to-emerald-600",
-  purple: "from-fuchsia-300 to-violet-600",
-};
 
 function TumbleCell({ sym, hot, popping }: { sym: string; hot: boolean; popping: boolean }) {
-  const base = `grid aspect-square place-items-center rounded-lg border transition ${
+  // real machine cell: inset dark glass, rim, top gloss — same premium look
+  // as the video slots, so the drawn candies read like a Hacksaw grid
+  const base = `relative grid aspect-square place-items-center overflow-hidden rounded-lg transition ${
     popping ? "scale-0 opacity-0 duration-300"
-    : hot ? "border-gold bg-gold/20 shadow-gold duration-150"
-    : "border-white/10 bg-white/5 duration-150"}`;
-  if (sym === "scatter") {
-    return <div className={base}><span className="text-xl sm:text-2xl drop-shadow-[0_0_8px_rgba(240,180,41,0.9)]">🍭</span></div>;
-  }
-  if (sym.startsWith("bomb:")) {
-    return (
-      <div className={base}>
-        <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-b from-rose-400 to-red-700 border border-white/40 font-mono text-[10px] font-black text-white drop-shadow sm:h-9 sm:w-9">
+    : hot ? "win-cell duration-150" : "duration-150"}`;
+  const plate = hot ? undefined : {
+    background: "linear-gradient(160deg, #241a33 0%, #140d20 55%, #0a0614 100%)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.10), inset 0 0 0 1px rgba(196,165,255,0.14), inset 0 -7px 12px -7px rgba(0,0,0,0.9)",
+  };
+  const gloss = (
+    <div className="pointer-events-none absolute inset-x-1 top-0.5 h-[38%] rounded-[40%] bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent)] blur-[1px]" />
+  );
+  // scatter is the lollipop; bombs carry their stamp; everything else is a
+  // drawn candy/gem face
+  const sk = sym === "scatter" ? "lollipop" : sym;
+  const face = sym.startsWith("bomb:") ? null : SymbolFace({ sym: sk });
+  return (
+    <div className={base} style={plate}>
+      {gloss}
+      {sym.startsWith("bomb:") ? (
+        <span className="relative z-10 grid h-8 w-8 place-items-center rounded-full bg-gradient-to-b from-rose-400 to-red-700 border border-white/40 font-mono text-[10px] font-black text-white shadow-[0_2px_4px_rgba(0,0,0,0.6)] sm:h-9 sm:w-9">
           {sym.split(":")[1]}x
         </span>
-      </div>
-    );
-  }
-  const gem = TB_GEM[sym];
-  return (
-    <div className={base}>
-      {gem ? (
-        <span className={`h-7 w-7 rounded-xl bg-gradient-to-br ${gem} shadow-inner border border-white/30 sm:h-8 sm:w-8`}>
-          <span className="ml-1 mt-1 block h-2 w-2 rounded-full bg-white/50" />
-        </span>
       ) : (
-        <span className="text-xl sm:text-2xl">{TB_FRUIT[sym] ?? sym}</span>
+        <div className="relative z-10 grid h-full w-full place-items-center [filter:drop-shadow(0_3px_4px_rgba(0,0,0,0.7))]">
+          {face ?? <span className="text-xl sm:text-2xl">{TB_FRUIT[sym] ?? sym}</span>}
+        </div>
       )}
     </div>
   );
@@ -2506,8 +2503,10 @@ const DR_TIERS: [string, string, string][] = [
 ];
 
 // the fortune board's resting symbols — what the reels show between coins
-const DR_SYMS = ["🐉", "🐲", "🏮", "🧧", "🐢", "🐟", "💰", "🎐"];
-const PB_SYMS = ["🐷", "🪙", "💵", "🏦", "🔨", "💰", "🎀", "⭐"];
+// hold&win resting reels use DRAWN symbols (not emoji) so the board reads
+// like a real machine between coin drops — the coins remain the stars
+const DR_SYMS = ["coin", "crown", "seven", "diamond", "ring", "bell", "star", "cherry"];
+const PB_SYMS = ["coin", "star", "diamond", "ring", "bell", "crown", "seven", "cherry"];
 
 /* one hold&win cell mid-spin: a fast blurred mini-reel of theme symbols */
 function SpinCellStrip({ syms, seed }: { syms: string[]; seed: number }) {
@@ -2516,7 +2515,9 @@ function SpinCellStrip({ syms, seed }: { syms: string[]; seed: number }) {
     <div className="relative aspect-square overflow-hidden rounded-md border border-white/10 bg-base-900/80">
       <div className="vs-strip absolute inset-x-0 blur-[1px]">
         {[...items, ...items].map((s, j) => (
-          <div key={j} className="grid aspect-square w-full place-items-center text-xl">{s}</div>
+          <div key={j} className="grid aspect-square w-full place-items-center">
+            {SymbolFace({ sym: s }) ?? <span className="text-xl">{s}</span>}
+          </div>
         ))}
       </div>
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1/3 bg-gradient-to-b from-black/50 to-transparent" />
@@ -2716,8 +2717,8 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
                     </span>
                   )
                 ) : (
-                  <span className="text-xl opacity-70 drop-shadow-[0_2px_3px_rgba(0,0,0,0.7)]">
-                    {DR_SYMS[(i * 7 + spinSeq * 5) % DR_SYMS.length]}
+                  <span className="grid h-9 w-9 place-items-center opacity-75 [filter:drop-shadow(0_2px_3px_rgba(0,0,0,0.7))]">
+                    {SymbolFace({ sym: DR_SYMS[(i * 7 + spinSeq * 5) % DR_SYMS.length] })}
                   </span>
                 )}
               </div>
