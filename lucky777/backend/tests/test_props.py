@@ -205,3 +205,32 @@ def test_market_name_parsing_and_name_matching():
         type = "prop:pop"
     assert P.parse_market(M) == ("J. Diaz", "ks")
     assert P.norm_name("José Ramírez") == "jose ramirez"
+
+
+@pytest.mark.asyncio
+async def test_props_synth_fallback_when_the_feed_is_empty(session, monkeypatch):
+    """If the live odds plan returns no player props, the house stocks its own
+    so an upcoming marquee game never shows an empty Props+ board."""
+    from app.sportsbook import ingest
+
+    sp = Sport(key="baseball", name="Baseball"); session.add(sp); await session.flush()
+    comp = Competition(sport_id=sp.id, key="baseball_mlb", name="MLB")
+    session.add(comp); await session.flush()
+    ev = Event(provider_id="real:x1", competition_id=comp.id,
+               home="New York Yankees", away="Boston Red Sox", status="scheduled",
+               starts_at=datetime.now(timezone.utc) + timedelta(hours=5))
+    session.add(ev); await session.flush(); await session.commit()
+
+    class FeedWithNoProps:
+        async def fetch_event_props(self, sport_key, provider_id):
+            return []
+
+    monkeypatch.setattr(ingest, "get_provider", lambda: FeedWithNoProps())
+    r = await ingest.sync_props(session, max_events=5)
+    assert r["synth_events"] >= 1, r
+    props = (await session.execute(
+        select(Market).where(Market.type.like("prop:%")))).scalars().all()
+    assert len(props) >= 5                       # a full sheet, not empty
+    # a second run does not double-stock the same game
+    r2 = await ingest.sync_props(session, max_events=5)
+    assert r2["markets_added"] == 0, r2

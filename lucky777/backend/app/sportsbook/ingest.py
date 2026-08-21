@@ -221,6 +221,12 @@ async def sync_props(session: AsyncSession, max_events: int = 40) -> dict:
     provider = get_provider()
     if not hasattr(provider, "fetch_event_props"):
         return {"pulled_events": 0, "note": "fixture feed carries its own"}
+    # house-generated props stand in whenever the live feed returns none — some
+    # odds plans don't include player props, and props aren't always posted yet.
+    # Either way the Props+ board is never left empty for an upcoming game.
+    import random as _random
+    from .providers.fixture import FixtureProvider
+    _synth = FixtureProvider()
     from datetime import timedelta
     now = datetime.now(timezone.utc)
     horizon = now + timedelta(hours=36)
@@ -232,7 +238,7 @@ async def sync_props(session: AsyncSession, max_events: int = 40) -> dict:
                Event.starts_at <= horizon,
                ~Event.provider_id.like("synth:%"))
         .order_by(Event.starts_at))).all()
-    pulled = markets_added = 0
+    pulled = markets_added = synth_events = 0
     for ev, comp_key in evs:
         if pulled >= max_events:
             break
@@ -245,8 +251,22 @@ async def sync_props(session: AsyncSession, max_events: int = 40) -> dict:
         try:
             pms = await provider.fetch_event_props(comp_key, ev.provider_id)
         except Exception:                                    # noqa: BLE001
-            continue
+            pms = []
+        synth = False
+        if not pms:
+            # the live feed gave nothing — generate a house props sheet so the
+            # game still has a full Player Props board
+            group = comp_key.split("_")[0]
+            rng = _random.Random(f"props:{ev.provider_id}")
+            pms = _synth._props(rng, group, ev.home, ev.away)
+            synth = bool(pms)
+        # markets are unique per (event, type, line); two players can land the
+        # same prop line, so keep the first and skip the collision
+        seen: set[tuple[str, str | None]] = set()
         for pm in pms:
+            if (pm.type, pm.line) in seen:
+                continue
+            seen.add((pm.type, pm.line))
             mk = Market(event_id=ev.id, type=pm.type, line=pm.line, name=pm.name)
             session.add(mk)
             await session.flush()
@@ -255,9 +275,13 @@ async def sync_props(session: AsyncSession, max_events: int = 40) -> dict:
                     market_id=mk.id, key=ps.key, name=ps.name,
                     odds_decimal=str(ps.odds.quantize(Decimal("0.0001")))))
             markets_added += 1
-        pulled += 1
+        if pms:
+            pulled += 1
+        if synth:
+            synth_events += 1
     await session.flush()
-    return {"pulled_events": pulled, "markets_added": markets_added}
+    return {"pulled_events": pulled, "markets_added": markets_added,
+            "synth_events": synth_events}
 
 
 def has_live_scores(provider: OddsProvider) -> bool:

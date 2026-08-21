@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     live_total_steps: int = 18      # ~6 minutes of real time per game at 20s ticks
     # big-plan extras (0 = off, sized for the 5M-credit tier):
     live_odds_poll_seconds: int = 0   # real in-play prices for live games
-    props_sync_hours: int = 0         # auto-pull player props for the majors
+    props_sync_hours: int = 6         # auto-pull player props for the majors
     esports_enabled: int = 1          # the house esports circuit
     futures_sync_hours: int = 6       # outrights: championships, MVPs, awards
 
