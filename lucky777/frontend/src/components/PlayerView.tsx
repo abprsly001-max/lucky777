@@ -2828,18 +2828,32 @@ const VS_LINES: number[][] = [
 ];
 
 const VS_THEMES: Record<string, { bg: string; frame: string;
-  scene: import("./GameArt").SceneKind; stone?: boolean;
-  char: import("./GameArt").CharKind }> = {
-  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/40", scene: "vault", char: "cat" },
-  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/40", scene: "jungle", stone: true, char: "idol" },
-  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/40", scene: "candy", char: "cat" },
-  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/40", scene: "graveyard", stone: true, char: "reaper" },
-  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/40", scene: "city", char: "cat" },
-  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/40", scene: "prairie", stone: true, char: "buffalo" },
+  scene: import("./GameArt").SceneKind; stone?: boolean; glow: string;
+  char: import("./GameArt").CharKind; accent: Accent }> = {
+  golden7s: { bg: "from-[#241703] via-[#120b02] to-black", frame: "border-gold/50",
+    glow: "rgba(240,180,41,0.55)", scene: "vault", char: "cat",
+    accent: { base: "#2b2008", glow: "rgba(240,180,41,0.22)", rim: "rgba(240,180,41,0.42)" } },
+  aztec: { bg: "from-[#12300f] via-[#0a1a08] to-black", frame: "border-emerald-500/50",
+    glow: "rgba(16,185,129,0.5)", scene: "jungle", stone: true, char: "idol",
+    accent: { base: "#0f2a1b", glow: "rgba(16,185,129,0.20)", rim: "rgba(16,185,129,0.42)" } },
+  fruitblitz: { bg: "from-[#33063a] via-[#170318] to-black", frame: "border-fuchsia-500/50",
+    glow: "rgba(232,60,190,0.5)", scene: "candy", char: "cat",
+    accent: { base: "#2c0e33", glow: "rgba(232,60,190,0.22)", rim: "rgba(232,60,190,0.44)" } },
+  reaper: { bg: "from-[#1c1030] via-[#0d0718] to-black", frame: "border-violet-500/50",
+    glow: "rgba(139,92,246,0.55)", scene: "graveyard", stone: true, char: "reaper",
+    accent: { base: "#191030", glow: "rgba(139,92,246,0.24)", rim: "rgba(139,92,246,0.48)" } },
+  neonnights: { bg: "from-[#04293a] via-[#02141d] to-black", frame: "border-cyan-400/50",
+    glow: "rgba(34,211,238,0.55)", scene: "city", char: "cat",
+    accent: { base: "#06232f", glow: "rgba(34,211,238,0.22)", rim: "rgba(34,211,238,0.46)" } },
+  buffalo: { bg: "from-[#33200a] via-[#170e04] to-black", frame: "border-orange-500/50",
+    glow: "rgba(249,115,22,0.5)", scene: "prairie", stone: true, char: "buffalo",
+    accent: { base: "#2c1c0a", glow: "rgba(249,115,22,0.20)", rim: "rgba(249,115,22,0.44)" } },
 };
 
-function VSCell({ sym, hot, dim, tier, stone }: {
+type Accent = { base: string; glow: string; rim: string };
+function VSCell({ sym, hot, dim, tier, stone, accent }: {
   sym: string; hot: boolean; dim: boolean; tier: number; stone?: boolean;
+  accent?: Accent;
 }) {
   const spec = SYMBOL_GLYPH[sym] ?? { g: sym };
   const face = SymbolFace({ sym, stone });
@@ -2850,21 +2864,25 @@ function VSCell({ sym, hot, dim, tier, stone }: {
   );
   // the cell: a real inset machine window, not a flat icon plate. A dark
   // glass base, a rim-lit metal edge, top gloss, a floor shadow, and a
-  // tier-tinted glow behind the symbol so premiums read hot.
-  const glow = premium ? "rgba(240,180,41,0.28)"
+  // tier-tinted glow behind the symbol so premiums read hot. Each machine
+  // passes its own accent so the whole reel bank reads in its colour.
+  const glow = premium ? "rgba(240,180,41,0.30)"
+    : accent ? accent.glow
     : tier <= 2 ? "rgba(245,158,11,0.20)"
     : tier <= 4 ? "rgba(56,189,248,0.15)"
     : "rgba(148,163,184,0.10)";
   const rim = premium ? "rgba(240,180,41,0.55)"
+    : accent ? accent.rim
     : tier <= 2 ? "rgba(251,191,36,0.35)"
     : tier <= 4 ? "rgba(56,189,248,0.30)" : "rgba(255,255,255,0.12)";
+  const baseTop = accent?.base ?? "#1b2230";
   return (
     <div className={`relative grid aspect-square place-items-center overflow-hidden rounded-lg transition ${
       hot ? "win-cell" : dim ? "opacity-30" : ""}`}
       style={hot ? undefined : {
         background:
           `radial-gradient(circle at 50% 32%, ${glow}, transparent 70%),` +
-          "linear-gradient(160deg, #1b2230 0%, #0c111b 55%, #05080e 100%)",
+          `linear-gradient(160deg, ${baseTop} 0%, #0c111b 55%, #05080e 100%)`,
         boxShadow:
           `inset 0 1px 0 rgba(255,255,255,0.10), inset 0 0 0 1px ${rim},` +
           "inset 0 -8px 14px -8px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.5)",
@@ -2907,10 +2925,10 @@ function CabinetLights({ h = 9, v = 5 }: { h?: number; v?: number }) {
 /* one physical reel: a spinning strip behind a 3-row window, then the
    staggered slam-stop with overshoot — the Hacksaw feel */
 function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
-                  stone }: {
+                  stone, accent }: {
   reel: number; col: string[]; spinning: boolean; justStopped: boolean;
   symbols: string[]; hotCells: Set<string>; hotLine: number | null;
-  stone?: boolean;
+  stone?: boolean; accent?: Accent;
 }) {
   // spin -> land (the finals roll down into the window and settle) -> idle
   const [phase, setPhase] = useState<"idle" | "spin" | "land">("idle");
@@ -2936,7 +2954,7 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
             {[...strip, ...strip].map((s, j) => (
               <div key={j} className="mb-1.5 w-full">
                 <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false}
-                  stone={stone} />
+                  stone={stone} accent={accent} />
               </div>
             ))}
           </div>
@@ -2955,7 +2973,7 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
             {[...col, ...strip.slice(0, 5)].map((s, j) => (
               <div key={j} className="mb-1.5 w-full">
                 <VSCell sym={s} tier={symbols.indexOf(s)} hot={false} dim={false}
-                  stone={stone} />
+                  stone={stone} accent={accent} />
               </div>
             ))}
           </div>
@@ -2971,7 +2989,7 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
           <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
             hot={hotCells.has(`${reel}-${row}`)}
             dim={hotLine !== null && !hotCells.has(`${reel}-${row}`)}
-            stone={stone} />
+            stone={stone} accent={accent} />
         ))}
       </div>
     </div>
@@ -2986,6 +3004,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   onBalance: (b: string) => void; onPlayed: () => void;
 }) {
   const vs = def.vslot!;
+  const theme = VS_THEMES[vs.machine] ?? VS_THEMES.golden7s;
   const [denom, setDenom] = useState(0.5);      // per line
   const [lines, setLines] = useState(20);
   const stake = String(Math.round(denom * lines * 100) / 100);
@@ -3161,22 +3180,37 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           </div>
         )}
 
-        <div className={`relative overflow-hidden rounded-xl border bg-gradient-to-b p-3 pt-8 ${
-          (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).frame} ${
-          (VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).bg}`}>
-          {/* the world behind the reels, dimmed so it reads as a backdrop and
-              never as a glare over the symbols */}
-          <SlotScene kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).scene} />
-          <div className="pointer-events-none absolute inset-0 bg-black/45" />
+        <div className={`vs-cabinet relative overflow-hidden rounded-xl border-2 bg-gradient-to-b p-3 pt-8 ${
+          theme.frame} ${theme.bg}`}
+          style={{ boxShadow: `inset 0 0 44px -12px ${theme.glow}, 0 0 0 1px rgba(0,0,0,0.4)`,
+                   ["--mglow" as string]: theme.glow }}>
+          {/* the world behind the reels — kept dim enough not to glare, bright
+              enough that each machine's own scene actually reads */}
+          <SlotScene kind={theme.scene} />
+          <div className="pointer-events-none absolute inset-0 bg-black/30" />
+          {/* the machine's colour breathing behind the glass */}
+          <div className="vs-ambient pointer-events-none absolute inset-0"
+            style={{ background: `radial-gradient(circle at 50% 42%, ${theme.glow}, transparent 62%)` }} />
           <CabinetLights />
           {/* the house mascot comes out for the whole bonus */}
           {freeLeft > 0 && (
-            <BonusCharacter kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).char}
-              casting={busy} />
+            <BonusCharacter kind={theme.char} casting={busy} />
           )}
-          {/* the reel bank, behind glass — gold-lit while the bonus runs */}
-          <div className={`relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)] ${
-            freeLeft > 0 ? "ring-2 ring-gold/50 shadow-gold" : ""}`}>
+          {/* the free-spins multiplier, popping bigger each time it climbs */}
+          {freeLeft > 0 && (
+            <div key={`m-${curMult ?? 0}-${freeLeft}`}
+              className="vs-mult-pop pointer-events-none absolute left-1/2 top-1.5 z-30">
+              <span className="rounded-full bg-black/75 px-3 py-1 text-lg font-black text-white shadow-lg"
+                style={{ boxShadow: `0 0 0 2px ${theme.accent.rim}, 0 0 16px -2px ${theme.glow}` }}>
+                ×{curMult ?? vs.free_spins.mult}
+              </span>
+            </div>
+          )}
+          {/* the reel bank, behind glass — lit in the machine's colour while
+              the bonus runs */}
+          <div className={`relative z-10 rounded-lg bg-black/40 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)] ${
+            freeLeft > 0 ? "vs-bonus-ring" : ""}`}
+            style={freeLeft > 0 ? { boxShadow: `0 0 0 2px ${theme.accent.rim}, 0 0 22px -2px ${theme.glow}` } : undefined}>
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (
                 <div key={reel}
@@ -3184,7 +3218,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
                   <VSReel reel={reel} col={col} spinning={live[reel]}
                     justStopped={stopped[reel]} symbols={vs.symbols}
                     hotCells={hotCells} hotLine={hotLine}
-                    stone={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).stone} />
+                    stone={theme.stone} accent={theme.accent} />
                 </div>
               ))}
             </div>
@@ -3509,7 +3543,8 @@ function GrandHeist({ def, onBalance, onPlayed }: {
               {grid.map((col, reel) => (
                 <VSReel key={reel} reel={reel} col={col} spinning={live[reel]}
                   justStopped={false} symbols={def.symbols}
-                  hotCells={hotCells} hotLine={hotLine} />
+                  hotCells={hotCells} hotLine={hotLine}
+                  accent={{ base: "#2b2008", glow: "rgba(240,180,41,0.22)", rim: "rgba(240,180,41,0.42)" }} />
               ))}
             </div>
             {/* sticky multiplier chips pinned over the glass */}
