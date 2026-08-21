@@ -3008,6 +3008,8 @@ function VideoSlot({ def, onBalance, onPlayed }: {
   const [autoMenu, setAutoMenu] = useState(false);
   const [anticipate, setAnticipate] = useState(false);
   const [bigWin, setBigWin] = useState<{ amount: string; tier: string } | null>(null);
+  const [curMult, setCurMult] = useState<number | null>(null);
+  const fsLabel = vs.free_spins.label ?? "Free Spins";
   const autoRef = useRef(0);
   useEffect(() => { autoRef.current = auto; }, [auto]);
   const turboRef = useRef(false);
@@ -3046,7 +3048,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
       onBalance(r.balance);
       setFreeLeft(r.free_spins_left);
       setBonusTotal("0");
-      setBanner(`⭐ BONUS BOUGHT — ${r.free_spins_left} FREE SPINS at ${r.mult}× ⭐`);
+      setBanner(`⭐ BONUS BOUGHT — ${r.free_spins_left} FREE SPINS · ${fsLabel} ⭐`);
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
 
@@ -3085,6 +3087,8 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           setWins(r.line_wins);
           setFreeLeft(r.free_spins_left);
           setBonusTotal(r.bonus_total);
+          // during the bonus the machine's feature sets each spin's multiplier
+          setCurMult(wasFree ? (r as { mult?: number }).mult ?? null : null);
           const gotBonus = !wasFree && r.free_spins_left > 0;
           const winMult = Number(r.win) / Math.max(0.01, Number(stake));
           if (Number(r.win) > 0) {
@@ -3096,7 +3100,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
             } else { sfx.win(); }
           }
           if (gotBonus) {
-            setBanner(`${r.free_spins_left} FREE SPINS — all wins ${vs.free_spins.mult}×`);
+            setBanner(`${r.free_spins_left} FREE SPINS — ${fsLabel}`);
             setAuto(0);                       // bonus pauses autoplay
           } else if (wasFree && r.free_spins_left === 0) {
             setBanner(`Bonus complete — ${money(r.bonus_total)}`);
@@ -3147,7 +3151,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
 
         {freeLeft > 0 && (
           <div className="mb-2 flex items-center justify-between rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-bold text-gold">
-            <span>FREE SPINS · {freeLeft} left · all wins {vs.free_spins.mult}×</span>
+            <span>{fsLabel} · {freeLeft} left · ×{curMult ?? vs.free_spins.mult}</span>
             <span className="font-mono">{money(bonusTotal)}</span>
           </div>
         )}
@@ -3326,7 +3330,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
           <p className="mt-2 text-[10px] text-slate-500">
             Wilds substitute for everything except scatters. Wins pay left to right
             on the 20 fixed lines. {vs.free_spins.trigger}+ scatters anywhere start{" "}
-            {vs.free_spins.count} free spins with all wins at {vs.free_spins.mult}×.
+            {vs.free_spins.count} free spins — the {fsLabel} bonus.
           </p>
         </div>
       )}

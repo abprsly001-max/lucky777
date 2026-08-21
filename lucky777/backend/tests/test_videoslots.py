@@ -50,3 +50,25 @@ def test_bonus_buy_is_priced_at_the_house_edge_or_worse():
         rtp_of_buy = V.bonus_ev_per_stake(m) / cost
         assert rtp_of_buy <= V.TARGET_RTP, (key, rtp_of_buy)
         assert cost >= 5, key            # a bonus never sells cheap
+
+
+def test_every_machine_has_its_own_bonus_feature():
+    # each machine carries its own per-spin multiplier profile, sized to its
+    # spin count, and its own labelled feature — no two share a profile
+    profiles = []
+    for key, m in V.VIDEO_SLOTS.items():
+        fs = m["free_spins"]
+        assert len(fs["profile"]) == fs["count"], key
+        assert fs.get("label"), key
+        profiles.append(tuple(fs["profile"]))
+    assert len(set(profiles)) == len(profiles), "profiles must be distinct"
+
+
+def test_wild_reel_bonus_beats_the_base_spin_and_stays_exact():
+    reaper = V.VIDEO_SLOTS["reaper"]
+    assert reaper["free_spins"]["wild_reels"] == [2]
+    # the locked wild reel makes a bonus spin richer than a base spin
+    assert V._bonus_line_ev(reaper) > V._line_ev(reaper)
+    # and the middle reel really comes out all wild during the bonus
+    r = V.spin("s", "c", 5, "reaper", wild_reels=[2])
+    assert r.grid[2] == ["wild", "wild", "wild"]

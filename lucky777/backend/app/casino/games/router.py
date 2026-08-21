@@ -160,7 +160,8 @@ def _vslot_entries(mn: str, mx: str) -> list[dict]:
             "key": f"vslot:{key}", "name": m["name"], "icon": "🎰",
             "category": "slots", "min": mn, "max": mx,
             "rules": m["tagline"] + f" 5 reels, 20 lines. {fs['trigger']}+ scatters "
-                     f"award {fs['count']} free spins at {fs['mult']}x.",
+                     f"trigger the {fs.get('label', 'Free Spins')} bonus — "
+                     f"{fs['count']} free spins.",
             "vslot": {
                 "machine": key,
                 "symbols": [k for k, _, _ in m["symbols"]],
@@ -1476,12 +1477,21 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
         if st["machine"] != req.machine:
             raise HTTPException(409,
                 f"finish your bonus on {VS.VIDEO_SLOTS[st['machine']]['name']} first")
-        out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine)
+        out = VS.spin(pair.server_seed, pair.client_seed, nonce, req.machine,
+                      wild_reels=fs_conf.get("wild_reels"))
         n_lines = int(st.get("lines", 20))
         line_bet = open_rnd.stake_micros // n_lines
         wins_played = [w for w in out.line_wins if w["line"] < n_lines]
         pay_units = sum(Decimal(w["pay"]) for w in wins_played)
-        win = payout_micros(line_bet, pay_units * fs_conf["mult"])
+        # this machine's feature sets the multiplier for THIS spin (a rising
+        # ladder, a stampede build-up, a flat run…) — index by spins used so far
+        profile = fs_conf.get("profile")
+        if profile:
+            idx = min(fs_conf["count"] - st["spins_left"], len(profile) - 1)
+            cur_mult = profile[max(0, idx)]
+        else:
+            cur_mult = fs_conf["mult"]
+        win = payout_micros(line_bet, pay_units * cur_mult)
         st["spins_left"] -= 1
         st["total_win"] += win
         wallet = await ledger.wallet_for(session, user.id)
@@ -1499,7 +1509,7 @@ async def vslot_spin(req: VSlotRequest, user: User = Depends(betting_user),
         await session.commit()
         return {"round_id": open_rnd.id, "free_spin": True,
                 "grid": out.grid, "line_wins": wins_played,
-                "scatters": out.scatters, "mult": fs_conf["mult"],
+                "scatters": out.scatters, "mult": cur_mult,
                 "win": str(from_micros(win)), "free_spins_left": free_left,
                 "lines": n_lines,
                 "bonus_total": str(from_micros(st["total_win"])),

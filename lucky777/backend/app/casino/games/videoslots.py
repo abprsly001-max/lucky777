@@ -32,8 +32,10 @@ WILD, SCATTER = "wild", "scatter"
 VIDEO_SLOTS: dict[str, dict] = {
     "golden7s": {
         "name": "Golden 7s Deluxe",
-        "tagline": "Vegas classic. Stacked sevens, 2x bonus spins.",
-        "free_spins": {"trigger": 3, "count": 10, "mult": 2},
+        "tagline": "Vegas classic. A rising multiplier climbs every spin.",
+        "free_spins": {"trigger": 3, "count": 10, "mult": 6,
+                       "profile": [2, 2, 3, 3, 4, 4, 5, 5, 6, 6],
+                       "feature": "ladder", "label": "Rising Multiplier"},
         "symbols": [
             (WILD,    2,  {3: 40, 4: 200, 5: 1000}),
             (SCATTER, 3,  None),
@@ -49,8 +51,10 @@ VIDEO_SLOTS: dict[str, dict] = {
     },
     "aztec": {
         "name": "Aztec Treasure",
-        "tagline": "Find the pyramid. 12 bonus spins at 3x.",
-        "free_spins": {"trigger": 3, "count": 12, "mult": 3},
+        "tagline": "Find the pyramid. Twelve steady bonus spins at 3x.",
+        "free_spins": {"trigger": 3, "count": 12, "mult": 3,
+                       "profile": [3] * 12,
+                       "feature": "flat", "label": "Idol Hunt · 12 spins"},
         "symbols": [
             (WILD,    2,  {3: 50, 4: 250, 5: 1500}),
             (SCATTER, 2,  None),
@@ -66,8 +70,10 @@ VIDEO_SLOTS: dict[str, dict] = {
     },
     "reaper": {
         "name": "Reaper's Riches",
-        "tagline": "Dark, mean, and top-heavy. 666x wilds.",
-        "free_spins": {"trigger": 3, "count": 10, "mult": 3},
+        "tagline": "The scythe turns the middle reel fully wild all bonus.",
+        "free_spins": {"trigger": 3, "count": 8, "mult": 3,
+                       "profile": [3] * 8, "wild_reels": [2],
+                       "feature": "wildreel", "label": "Wild Reaper Reel"},
         "symbols": [
             (WILD,    1,  {3: 66, 4: 666, 5: 6666}),
             (SCATTER, 2,  None),
@@ -83,8 +89,10 @@ VIDEO_SLOTS: dict[str, dict] = {
     },
     "neonnights": {
         "name": "Neon Nights",
-        "tagline": "Retro heat. Steady hits, chrome sevens.",
-        "free_spins": {"trigger": 3, "count": 10, "mult": 2},
+        "tagline": "Retro heat. The multiplier trail climbs as you go.",
+        "free_spins": {"trigger": 3, "count": 10, "mult": 5,
+                       "profile": [2, 2, 2, 3, 3, 3, 4, 4, 5, 5],
+                       "feature": "trail", "label": "Multiplier Trail"},
         "symbols": [
             (WILD,    3,  {3: 30, 4: 120, 5: 500}),
             (SCATTER, 3,  None),
@@ -100,8 +108,10 @@ VIDEO_SLOTS: dict[str, dict] = {
     },
     "buffalo": {
         "name": "Buffalo Stampede",
-        "tagline": "The casino-floor classic. 15 bonus spins.",
-        "free_spins": {"trigger": 3, "count": 15, "mult": 2},
+        "tagline": "Fifteen bonus spins, the herd multiplier building all the way.",
+        "free_spins": {"trigger": 3, "count": 15, "mult": 5,
+                       "profile": [1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5],
+                       "feature": "stampede", "label": "Stampede Build-Up"},
         "symbols": [
             (WILD,    2,  {3: 40, 4: 180, 5: 900}),
             (SCATTER, 2,  None),
@@ -117,8 +127,10 @@ VIDEO_SLOTS: dict[str, dict] = {
     },
     "fruitblitz": {
         "name": "Fruit Blitz",
-        "tagline": "Juice everywhere. Hits all day long.",
-        "free_spins": {"trigger": 3, "count": 8, "mult": 2},
+        "tagline": "Short, hot bonus — six spins, every win juiced 5x.",
+        "free_spins": {"trigger": 3, "count": 6, "mult": 5,
+                       "profile": [5] * 6,
+                       "feature": "rush", "label": "Juice Rush · 5x"},
         "symbols": [
             (WILD,    3,  {3: 25, 4: 100, 5: 400}),
             (SCATTER, 3,  None),
@@ -170,24 +182,59 @@ def _line_ev(machine: dict) -> Decimal:
     return ev
 
 
-def _fs_factor(machine: dict) -> Decimal:
-    """Bonus contribution: P(3+ scatters in 15 cells) x spins x multiplier.
-    Free spins can't retrigger, so the sum is closed."""
-    p = _probs(machine)[SCATTER]
+def _sum_profile(machine: dict) -> Decimal:
+    """Total multiplier handed out across the whole bonus. Each machine has its
+    own per-spin profile (a rising ladder, a flat run, a stampede build-up…);
+    an old flat machine falls back to count x mult."""
     fs = machine["free_spins"]
-    p_trig = Decimal(0)
-    for k in range(fs["trigger"], CELLS + 1):
-        p_trig += (Decimal(comb(CELLS, k)) * p**k * (1 - p) ** (CELLS - k))
-    return p_trig * fs["count"] * fs["mult"]
+    prof = fs.get("profile")
+    return Decimal(sum(prof)) if prof else Decimal(fs["count"] * fs["mult"])
+
+
+def _p_trigger(machine: dict) -> Decimal:
+    """P(enough scatters land in the 15 cells to start the bonus)."""
+    p = _probs(machine)[SCATTER]
+    trig = machine["free_spins"]["trigger"]
+    return sum((Decimal(comb(CELLS, k)) * p**k * (1 - p) ** (CELLS - k)
+                for k in range(trig, CELLS + 1)), Decimal(0))
+
+
+def _bonus_line_ev(machine: dict) -> Decimal:
+    """Per-line EV of ONE bonus spin. Same as the base line, unless the machine
+    locks whole reels wild for the bonus (Reaper's middle reel) — then it's
+    enumerated exactly over the reels that are still live."""
+    wild = machine["free_spins"].get("wild_reels")
+    if not wild:
+        return _line_ev(machine)
+    probs = _probs(machine)
+    keys = [k for k, _, _ in machine["symbols"]]
+    live = [i for i in range(REELS) if i not in wild]
+    ev = Decimal(0)
+    for combo in product(keys, repeat=len(live)):
+        line = [WILD] * REELS
+        pr = Decimal(1)
+        for pos, c in zip(live, combo):
+            line[pos] = c
+            pr *= probs[c]
+        pay = line_pay(machine, line)
+        if pay:
+            ev += pr * pay
+    return ev
+
+
+def _raw_rtp(machine: dict) -> Decimal:
+    """Full return per line-bet unit: the base game plus the bonus. The bonus
+    contribution is P(trigger) x total-bonus-multiplier x per-bonus-spin EV,
+    so every feature stays a closed computation and RTP is exact."""
+    return (_line_ev(machine)
+            + _p_trigger(machine) * _sum_profile(machine) * _bonus_line_ev(machine))
 
 
 def _normalize() -> None:
     """Scale every machine's pays so RTP == TARGET_RTP exactly (then floor
     to one decimal, which can only make the house richer)."""
     for m in VIDEO_SLOTS.values():
-        base = _line_ev(m)
-        total = base * (1 + _fs_factor(m))
-        scale = TARGET_RTP / total
+        scale = TARGET_RTP / _raw_rtp(m)
         for i, (k, w, pays) in enumerate(m["symbols"]):
             if pays:
                 m["symbols"][i] = (k, w, {
@@ -200,7 +247,7 @@ _normalize()
 
 
 def exact_rtp(machine: dict) -> Decimal:
-    return _line_ev(machine) * (1 + _fs_factor(machine))
+    return _raw_rtp(machine)
 
 
 @dataclass(frozen=True)
@@ -212,7 +259,8 @@ class SpinResult:
     triggered: bool
 
 
-def spin(server: str, client: str, nonce: int, machine_key: str) -> SpinResult:
+def spin(server: str, client: str, nonce: int, machine_key: str,
+         wild_reels: list[int] | None = None) -> SpinResult:
     m = VIDEO_SLOTS[machine_key]
     keys = [k for k, _, _ in m["symbols"]]
     weights = [w for _, w, _ in m["symbols"]]
@@ -230,6 +278,11 @@ def spin(server: str, client: str, nonce: int, machine_key: str) -> SpinResult:
                 break
         cells.append(pick)
     grid = [[cells[r * ROWS + row] for row in range(ROWS)] for r in range(REELS)]
+    # a bonus feature can lock whole reels wild (Reaper) before wins are read
+    if wild_reels:
+        for r in wild_reels:
+            if 0 <= r < REELS:
+                grid[r] = [WILD, WILD, WILD]
 
     pays = {k: p for k, _, p in m["symbols"] if p}
     wins: list[dict] = []
@@ -252,16 +305,16 @@ def spin(server: str, client: str, nonce: int, machine_key: str) -> SpinResult:
                          "pay": str(best_pay)})
             total += best_pay
 
-    scatters = cells.count(SCATTER)
+    scatters = sum(col.count(SCATTER) for col in grid)
     return SpinResult(grid=grid, line_wins=wins, scatters=scatters,
                       total_pay=total,
                       triggered=scatters >= m["free_spins"]["trigger"])
 
 
 def bonus_ev_per_stake(machine: dict) -> Decimal:
-    """Expected bonus payout in stake units: spins x multiplier x line EV."""
-    fs = machine["free_spins"]
-    return _line_ev(machine) * fs["count"] * fs["mult"]
+    """Expected bonus payout in stake units: the whole profile's multiplier
+    against the per-bonus-spin line EV (wild reels included)."""
+    return _sum_profile(machine) * _bonus_line_ev(machine)
 
 
 def buy_cost_mult(machine: dict) -> int:

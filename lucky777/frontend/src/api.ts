@@ -134,7 +134,8 @@ export interface VSlotDef {
   machine: string;
   symbols: string[];
   pays: Record<string, Record<string, string>>;
-  free_spins: { trigger: number; count: number; mult: number };
+  free_spins: { trigger: number; count: number; mult: number;
+                profile?: number[]; feature?: string; label?: string };
   lines: number;
   buy_cost?: number;
 }
