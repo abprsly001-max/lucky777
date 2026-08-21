@@ -740,6 +740,7 @@ function SlotGame({ def, onBalance, onPlayed }: {
       [0, 1, 2].forEach((i) => window.setTimeout(() => {
         stopReel(i, r.reels[i]);
         if (i === 2) {
+          sfx.reelsStop();
           setLast({ multiplier: r.multiplier, payout: r.payout, win: r.win });
           if (r.win) sfx.win(); else sfx.lose();
           onBalance(r.balance);
@@ -933,6 +934,7 @@ function PiggyBlast({ def, onBalance, onPlayed }: {
       sfx.spin();
       await sleep(400);
       for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); sfx.land(); }
+      sfx.reelsStop();
       await sleep(150);
       setSpinCells(false);
       if (Object.keys(r.coins).length) sfx.chip();
@@ -2593,6 +2595,7 @@ function GoldenDragon({ def, onBalance, onPlayed }: {
       sfx.spin();
       await sleep(400);
       for (let c = 0; c < 5; c++) { await sleep(150); setRevealCol(c); sfx.land(); }
+      sfx.reelsStop();
       await sleep(150);
       setSpinCells(false);
       if (Object.keys(r.coins).length) sfx.chip();
@@ -2856,6 +2859,27 @@ function VSCell({ sym, hot, dim, tier, stone }: {
   );
 }
 
+/* the cabinet marquee: a ring of bulbs chasing around the reel frame, the
+   way a real machine is lit. Bulbs sit in the frame gutter, never over the
+   symbols, and pulse on a stagger so the light travels clockwise. */
+function CabinetLights({ h = 9, v = 5 }: { h?: number; v?: number }) {
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i < h; i++) pts.push({ x: (i / (h - 1)) * 100, y: 0 });
+  for (let i = 1; i < v - 1; i++) pts.push({ x: 100, y: (i / (v - 1)) * 100 });
+  for (let i = h - 1; i >= 0; i--) pts.push({ x: (i / (h - 1)) * 100, y: 100 });
+  for (let i = v - 2; i >= 1; i--) pts.push({ x: 0, y: (i / (v - 1)) * 100 });
+  const total = pts.length;
+  return (
+    <div className="pointer-events-none absolute inset-[4px] z-20">
+      {pts.map((p, i) => (
+        <span key={i} className="cab-bulb"
+          style={{ left: `${p.x}%`, top: `${p.y}%`,
+                   animationDelay: `${((i / total) * 1.5).toFixed(2)}s` }} />
+      ))}
+    </div>
+  );
+}
+
 /* one physical reel: a spinning strip behind a 3-row window, then the
    staggered slam-stop with overshoot — the Hacksaw feel */
 function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
@@ -2864,7 +2888,6 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
   symbols: string[]; hotCells: Set<string>; hotLine: number | null;
   stone?: boolean;
 }) {
-  void justStopped;
   // spin -> land (the finals roll down into the window and settle) -> idle
   const [phase, setPhase] = useState<"idle" | "spin" | "land">("idle");
   useEffect(() => {
@@ -2919,7 +2942,7 @@ function VSReel({ reel, col, spinning, justStopped, symbols, hotCells, hotLine,
   }
   return (
     <div className="relative overflow-hidden rounded-lg">
-      <div className="grid gap-1.5">
+      <div className={`grid gap-1.5${justStopped ? " vs-seat" : ""}`}>
         {col.map((sym, row) => (
           <VSCell key={row} sym={sym} tier={symbols.indexOf(sym)}
             hot={hotCells.has(`${reel}-${row}`)}
@@ -3031,8 +3054,9 @@ function VideoSlot({ def, onBalance, onPlayed }: {
         setLive((l) => { const n = [...l]; n[i] = false; return n; });
         setStopped((s) => { const n = [...s]; n[i] = true; return n; });
         sfx.land();
-        if (i === 3 && sweat) { setAnticipate(true); sfx.tick(); }
+        if (i === 3 && sweat) { setAnticipate(true); sfx.riser(); }
         if (i === 4) {
+          sfx.reelsStop();
           setAnticipate(false);
           setWins(r.line_wins);
           setFreeLeft(r.free_spins_left);
@@ -3116,6 +3140,7 @@ function VideoSlot({ def, onBalance, onPlayed }: {
               never as a glare over the symbols */}
           <SlotScene kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).scene} />
           <div className="pointer-events-none absolute inset-0 bg-black/45" />
+          <CabinetLights />
           {/* the house mascot comes out for the whole bonus */}
           {freeLeft > 0 && (
             <BonusCharacter kind={(VS_THEMES[vs.machine] ?? VS_THEMES.golden7s).char}
@@ -3356,6 +3381,7 @@ function GrandHeist({ def, onBalance, onPlayed }: {
         setLive((l) => { const n = [...l]; n[i] = false; return n; });
         sfx.land();
         if (i === 4) {
+          sfx.reelsStop();
           setWins(r.line_wins);
           setStickies(r.stickies);
           setSpinsLeft(r.spins_left);
@@ -3449,6 +3475,7 @@ function GrandHeist({ def, onBalance, onPlayed }: {
 
         <div className="relative overflow-hidden rounded-xl border border-gold/40 bg-gradient-to-b from-[#1c1406] via-[#0d0902] to-black p-3 pt-14">
           <SlotScene kind="vault" />
+          <CabinetLights />
           <div className="relative z-10 rounded-lg bg-black/30 p-1.5 shadow-[inset_0_2px_12px_rgba(0,0,0,0.7)]">
             <div className="grid grid-cols-5 gap-1.5">
               {grid.map((col, reel) => (

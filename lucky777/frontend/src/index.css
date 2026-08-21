@@ -297,6 +297,42 @@
   .vs-stop {
     animation: vs-stop 0.34s cubic-bezier(0.22, 0.61, 0.36, 1);
   }
+
+  /* the reel seating as it locks: a quick catch of light + tiny settle,
+     the way real glass flashes when the reel snaps home */
+  @keyframes vs-seat {
+    0% { transform: scale(1.045); filter: brightness(1.55); }
+    55% { filter: brightness(1.12); }
+    100% { transform: scale(1); filter: brightness(1); }
+  }
+  .vs-seat {
+    animation: vs-seat 0.26s ease-out both;
+  }
+
+  /* the cabinet marquee: a ring of bulbs chasing around the reel frame.
+     each bulb pulses on a stagger so the light travels around the machine */
+  @keyframes cab-bulb {
+    0%, 100% {
+      opacity: 0.30;
+      transform: translate(-50%, -50%) scale(0.8);
+      box-shadow: 0 0 2px rgba(240, 180, 41, 0.55);
+    }
+    50% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.18);
+      box-shadow: 0 0 7px 2px rgba(255, 224, 138, 0.9),
+                  0 0 14px rgba(240, 180, 41, 0.7);
+    }
+  }
+  .cab-bulb {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: radial-gradient(circle at 35% 30%, #fff6d5, #f0b429 62%, #a15c07);
+    animation: cab-bulb 1.5s ease-in-out infinite;
+    will-change: opacity, transform;
+  }
   /* the anticipation shimmer on a big-win frame */
   @keyframes vs-glowpulse {
     0%, 100% { box-shadow: 0 0 14px -2px rgba(169, 126, 247, 0.6); }
